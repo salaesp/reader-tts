@@ -209,7 +209,7 @@ export default function Settings() {
             <TextInput
               defaultValue={settings.ttsModel}
               spellCheck={false}
-              placeholder="google/chirp-3"
+              placeholder="hexgrad/kokoro-82m"
               onBlur={(event) => {
                 const value = event.target.value.trim()
                 if (value && value !== settings.ttsModel) void save({ ttsModel: value })
