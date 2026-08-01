@@ -4,6 +4,7 @@ import type {
   Settings,
   SettingsUpdate,
   TtsModel,
+  TtsProvider,
   User,
 } from '../../shared/types'
 
@@ -21,7 +22,7 @@ export class ApiError extends Error {
     return this.status === 401
   }
 
-  /** No OpenRouter key is stored yet. */
+  /** No key is stored yet for the selected TTS provider. */
   get needsApiKey(): boolean {
     return this.status === 412 || this.code === 'no_api_key'
   }
@@ -95,7 +96,10 @@ export const api = {
       },
     ),
 
-  listTtsModels: () => request<{ models: TtsModel[] }>('/api/tts/models'),
+  listTtsModels: (provider?: TtsProvider) =>
+    request<{ provider: TtsProvider; models: TtsModel[] }>(
+      provider ? `/api/tts/models?provider=${provider}` : '/api/tts/models',
+    ),
 
   /** Downloads the stored EPUB. Returns the raw bytes for the parser. */
   async downloadBook(id: string, signal?: AbortSignal): Promise<Blob> {
@@ -109,7 +113,14 @@ export const api = {
 
   /** Synthesizes one chunk. Resolves to the audio bytes. */
   async synthesize(
-    body: { text: string; hash: string; model: string; voice: string; bookId?: string },
+    body: {
+      text: string
+      hash: string
+      provider: TtsProvider
+      model: string
+      voice: string
+      bookId?: string
+    },
     signal?: AbortSignal,
   ): Promise<Blob> {
     let response: Response

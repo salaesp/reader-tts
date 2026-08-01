@@ -1,7 +1,7 @@
 import type { ReadingLang } from '../../shared/types'
 import type { Chunk, Sentence } from './segmenter'
 import { ApiError } from './api'
-import { BrowserVoiceEngine, MissingApiKeyError, OpenRouterEngine, browserVoiceAvailable } from './tts'
+import { BrowserVoiceEngine, CloudTtsEngine, MissingApiKeyError, browserVoiceAvailable } from './tts'
 
 /**
  * Drives playback of a chapter's chunks.
@@ -37,8 +37,15 @@ export interface PlayerState {
    */
   sentenceIndex: number
   error: PlayerError | null
-  /** True once an OpenRouter failure pushed playback onto the browser voice. */
+  /** True once a provider failure pushed playback onto the browser voice. */
   usingFallback: boolean
+  /**
+   * Why the fallback kicked in. Kept apart from `error` because playback did
+   * not actually stop — but without it a provider that rejects every request
+   * looks like nothing more than "using the browser voice", which hides the
+   * one piece of information needed to fix it.
+   */
+  fallbackReason: PlayerError | null
 }
 
 /** Character span of one sentence inside its chunk's text. */
@@ -69,6 +76,7 @@ export class Player {
     sentenceIndex: -1,
     error: null,
     usingFallback: false,
+    fallbackReason: null,
   }
 
   private readonly audio: HTMLAudioElement
@@ -76,7 +84,7 @@ export class Player {
   private readonly prefetches = new Map<number, Promise<Blob>>()
   private readonly browserEngine = new BrowserVoiceEngine()
 
-  private engine: OpenRouterEngine | null
+  private engine: CloudTtsEngine | null
   private options: PlayerOptions
   private unlocked = false
   private disposed = false
@@ -88,7 +96,7 @@ export class Player {
   /** Sentence to start from once the chunk's audio is ready. */
   private pendingSentence: number | null = null
 
-  constructor(engine: OpenRouterEngine | null, options: PlayerOptions) {
+  constructor(engine: CloudTtsEngine | null, options: PlayerOptions) {
     this.engine = engine
     this.options = options
 
@@ -116,7 +124,8 @@ export class Player {
       next.chunkIndex === this.state.chunkIndex &&
       next.sentenceIndex === this.state.sentenceIndex &&
       next.error === this.state.error &&
-      next.usingFallback === this.state.usingFallback
+      next.usingFallback === this.state.usingFallback &&
+      next.fallbackReason === this.state.fallbackReason
     ) {
       return
     }
@@ -187,10 +196,15 @@ export class Player {
     if (sentenceIndex !== this.state.sentenceIndex) this.setState({ sentenceIndex })
   }
 
-  setEngine(engine: OpenRouterEngine | null): void {
+  /**
+   * Swapping the engine clears the fallback: the user changing provider, model
+   * or voice is exactly the fix for whatever pushed playback off the cloud.
+   */
+  setEngine(engine: CloudTtsEngine | null): void {
     this.engine = engine
     this.prefetches.clear()
-    this.setState({ usingFallback: engine === null ? this.state.usingFallback : false })
+    if (engine === null) return
+    this.setState({ usingFallback: false, fallbackReason: null })
   }
 
   setOptions(options: Partial<PlayerOptions>): void {
@@ -474,7 +488,7 @@ export class Player {
       (err instanceof ApiError && (err.code === 'network_error' || err.status >= 500))
 
     if (recoverable && browserVoiceAvailable() && !this.state.usingFallback) {
-      this.setState({ usingFallback: true })
+      this.setState({ usingFallback: true, fallbackReason: describeError(err) })
       this.prefetches.clear()
       const controller = new AbortController()
       this.playbackController = controller

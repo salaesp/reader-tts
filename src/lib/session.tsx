@@ -1,7 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Settings, SettingsUpdate, User } from '../../shared/types'
-import { DEFAULT_SPEED, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE } from '../../shared/types'
+import {
+  DEFAULT_ELEVENLABS_MODEL,
+  DEFAULT_ELEVENLABS_VOICE,
+  DEFAULT_SPEED,
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_PROVIDER,
+  DEFAULT_TTS_VOICE,
+} from '../../shared/types'
 import { ApiError, api } from './api'
 import { signOutOfGoogle } from './googleSignIn'
 
@@ -15,10 +22,21 @@ interface SessionValue {
 }
 
 const FALLBACK_SETTINGS: Settings = {
-  hasApiKey: false,
-  apiKeyHint: null,
-  ttsModel: DEFAULT_TTS_MODEL,
-  ttsVoice: DEFAULT_TTS_VOICE,
+  ttsProvider: DEFAULT_TTS_PROVIDER,
+  providers: {
+    openrouter: {
+      hasApiKey: false,
+      apiKeyHint: null,
+      model: DEFAULT_TTS_MODEL,
+      voice: DEFAULT_TTS_VOICE,
+    },
+    elevenlabs: {
+      hasApiKey: false,
+      apiKeyHint: null,
+      model: DEFAULT_ELEVENLABS_MODEL,
+      voice: DEFAULT_ELEVENLABS_VOICE,
+    },
+  },
   speed: DEFAULT_SPEED,
   uiLang: 'es',
   readingLang: 'es',
@@ -42,7 +60,13 @@ interface SessionCache {
 function readCache(): SessionCache | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
-    return raw ? (JSON.parse(raw) as SessionCache) : null
+    if (!raw) return null
+    const cache = JSON.parse(raw) as SessionCache
+    // A cache written before settings became per-provider has no `providers`
+    // map. Discarding it costs one online launch; keeping it would hand the
+    // reader a shape it dereferences blindly.
+    if (!cache?.settings?.providers?.openrouter) return null
+    return cache
   } catch {
     return null
   }

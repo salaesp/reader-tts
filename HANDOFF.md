@@ -44,37 +44,49 @@ npm run build     # typecheck + build
 
 ## 2. Lo primero que hay que hacer
 
-**Validar que `google/chirp-3` sirve para TTS.** Es el default y es el único
-supuesto sin confirmar del proyecto.
+**Averiguar cuál de los dos proveedores te funciona.** Ahora hay dos y se
+eligen desde Ajustes sin tocar código:
 
-La documentación pública que pude consultar describe Chirp 3 en OpenRouter como
-modelo de **transcripción** (audio→texto), no de síntesis. Vos indicaste que está
-disponible como TTS. No pude verificarlo porque el entorno donde trabajé bloquea
-`openrouter.ai` por allowlist de egreso.
+| | OpenRouter | ElevenLabs |
+|---|---|---|
+| Endpoint | `POST /v1/audio/speech` | `POST /v1/text-to-speech/{voice_id}` |
+| Key | `sk-or-v1-…` | `sk_…` |
+| Modelo por defecto | `google/gemini-3.1-flash-tts-preview` | `eleven_multilingual_v2` |
+| Voces | por modelo, no publicadas (se infieren del slug) | las de tu cuenta, por nombre |
 
-Cómo comprobarlo en 2 minutos:
+Comprobarlo desde la terminal, con cualquiera de los dos:
 
 ```bash
+# OpenRouter
 curl -X POST https://openrouter.ai/api/v1/audio/speech \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"google/chirp-3","input":"Hola, probando.","voice":"Kore","response_format":"mp3"}' \
+  -d '{"model":"google/gemini-3.1-flash-tts-preview","input":"Hola, probando.","voice":"Kore","response_format":"mp3"}' \
+  --output prueba.mp3
+
+# ElevenLabs — primero mirá qué voces tenés
+curl -H "xi-api-key: $ELEVENLABS_API_KEY" https://api.elevenlabs.io/v2/voices
+
+curl -X POST "https://api.elevenlabs.io/v1/text-to-speech/<VOICE_ID>?output_format=mp3_44100_128" \
+  -H "xi-api-key: $ELEVENLABS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hola, probando.","model_id":"eleven_multilingual_v2"}' \
   --output prueba.mp3
 ```
 
-- Si suena → listo, no hay nada que cambiar.
-- Si devuelve error → abrí **Ajustes** en la app y elegí otro modelo del
-  selector. La lista se arma en runtime desde `/api/v1/models` filtrando los que
-  generan audio, así que **no hace falta tocar código**. El candidato más
-  probable es `google/gemini-3.1-flash-tts-preview`.
-- Para cambiar el default del proyecto: `DEFAULT_TTS_MODEL` en
-  `shared/types.ts`.
+Lo mismo desde la app: **Ajustes → Proveedor de voz**, pegás la key y tocás
+**Probar voz**. El error del proveedor se muestra tal cual, que es lo que hace
+falta para saber si el problema es la key, el crédito, el modelo o la voz.
 
-Ojo con las voces: el nombre depende del modelo. Chirp usa nombres tipo `Kore`,
-`Aoede`, `Puck` (a veces con locale, `es-US-Chirp3-HD-Kore`). El botón
-**Probar voz** en Ajustes es la forma rápida de tantear.
+**Si el audio suena a robot y aparece «se usa la voz del navegador»**, es el
+fallback: la síntesis en la nube falló y el reproductor siguió con Web Speech
+para no cortar la lectura. El banner ahora incluye el motivo — antes solo decía
+que estaba usando la voz del navegador y el error real quedaba invisible, que es
+la forma más fácil de perder una tarde con esto.
 
----
+Para cambiar los defaults del proyecto: `DEFAULT_TTS_MODEL`,
+`DEFAULT_TTS_VOICE`, `DEFAULT_ELEVENLABS_MODEL` y `DEFAULT_TTS_PROVIDER` en
+`shared/types.ts`.
 
 ## 3. Credenciales que faltan
 
@@ -102,9 +114,16 @@ npm run pages:deploy
 lo necesita). Si conectás el repo al panel de Pages, replicá las tres variables
 ahí y asociá los bindings `DB` (D1) y `FILES` (KV).
 
-### OpenRouter
-La key se carga **desde Ajustes dentro de la app**, no en el repo ni en
-variables de entorno. Queda cifrada en D1.
+### OpenRouter / ElevenLabs
+Las keys se cargan **desde Ajustes dentro de la app**, no en el repo ni en
+variables de entorno. Quedan cifradas en D1, una por proveedor.
+
+Si la base ya existía antes del soporte de ElevenLabs, agregale las columnas
+nuevas (`schema.sql` usa `CREATE TABLE IF NOT EXISTS` y no las toca):
+
+```bash
+npm run db:migrate:local     # y/o db:migrate:remote
+```
 
 ---
 
@@ -114,7 +133,9 @@ Dónde tocar según lo que quieras cambiar:
 
 | Quiero… | Archivo |
 |---|---|
-| Cambiar modelo/voz por defecto | `shared/types.ts` |
+| Cambiar modelo/voz/proveedor por defecto | `shared/types.ts` |
+| Tocar cómo se llama a un proveedor | `functions/lib/tts/openrouter.ts`, `functions/lib/tts/elevenlabs.ts` |
+| Agregar un tercer proveedor | `functions/lib/tts/` (interfaz en `types.ts`) + `TtsProvider` en `shared/types.ts` |
 | Tocar el tamaño de los fragmentos de TTS | `src/lib/segmenter.ts` (`TARGET_CHUNK_CHARS`) |
 | Cambiar cómo se parsea el EPUB | `src/lib/epub.ts` |
 | Cambiar el resaltado de oraciones | `src/lib/annotate.ts` |
@@ -128,8 +149,9 @@ functions/            backend (Cloudflare Pages Functions)
   api/_middleware.ts  resuelve la sesión y convierte errores en JSON
   api/auth/session.ts login con Google, sesión, logout
   api/books/          listar, subir, descargar, portada, progreso
-  api/settings.ts     preferencias + API key cifrada
+  api/settings.ts     preferencias + API keys cifradas (una por proveedor)
   api/tts/            proxy de síntesis y lista de modelos
+  lib/tts/            clientes de OpenRouter y ElevenLabs tras una interfaz común
   lib/                cripto, sesión, verificación de tokens de Google
 src/
   lib/                epub, segmenter, annotate, player, tts, store, api, router
@@ -173,9 +195,18 @@ El token solo lo acepta tu Worker local, porque depende de tu `SESSION_SECRET`.
 
 Cosas que parecen mejorables pero están así a propósito:
 
-**La API key nunca va al browser.** Se cifra con AES-GCM en D1 y se descifra solo
-dentro del Worker. Si algún día tentás llamar a OpenRouter directo desde el
-cliente, perdés eso y quedás atado al CORS de OpenRouter.
+**Las API keys nunca van al browser.** Se cifran con AES-GCM en D1 y se
+descifran solo dentro del Worker. Si algún día tentás llamar al proveedor
+directo desde el cliente, perdés eso y quedás atado a su CORS.
+
+**Modelo y voz se guardan por proveedor, no compartidos.** Los ids no tienen
+nada que ver entre sí (`openai/gpt-4o-mini-tts` vs `eleven_multilingual_v2`), y
+el punto de tener dos proveedores es poder ir y volver comparando sin
+reconfigurar cada vez.
+
+**El hash de caché incluye el proveedor.** Dos proveedores pueden devolver audio
+distinto para el mismo texto, modelo y voz; sin el proveedor en la clave, el
+primero que se reprodujo se quedaría pegado.
 
 **La velocidad no se manda a la API.** Se aplica con `playbackRate` del elemento
 `<audio>`. Así un mismo audio generado sirve para todas las velocidades (el hash
@@ -227,13 +258,16 @@ Verificado con Chromium contra D1 y el almacenamiento local:
 - Cifrado de la key (verificado que en la base hay ciphertext)
 - i18n es/en, manifest válido, service worker activo
 - Modo offline: biblioteca y libro descargado siguen funcionando
-- 71 tests unitarios
+- 92 tests unitarios
 
 **No verificado:**
 
-- **La síntesis real de OpenRouter** — `openrouter.ai` estaba bloqueado por
-  allowlist de egreso en el entorno donde trabajé. Probé todo el camino hasta la
-  salida (validación, caché, manejo de errores) pero no la generación de audio.
+- **La síntesis real, en los dos proveedores** — `openrouter.ai` y
+  `api.elevenlabs.io` están bloqueados por allowlist de egreso en el entorno
+  donde se trabajó. Está probado todo el camino hasta la salida (validación,
+  ruteo por proveedor, caché, manejo de errores, y que la petición sale al host
+  correcto con los headers correctos), pero no la generación de audio ni la
+  forma exacta de las respuestas de éxito.
 - **El login con Google** — necesita un Client ID real. La verificación del token
   (firma RS256 contra el JWKS de Google, `aud`, `iss`, `exp`) tiene tests, pero
   el flujo completo con Google no se ejecutó.
@@ -268,7 +302,10 @@ Ninguna es necesaria para que funcione; en orden aproximado de valor:
 | Login no aparece / "Falta configurar GOOGLE_CLIENT_ID" | Falta la variable, o el origen no está en los orígenes autorizados de GCP |
 | `no_api_key` al reproducir | No cargaste la key en Ajustes |
 | `invalid_api_key` | OpenRouter rechazó la key: revisala o fijate si tiene crédito |
-| `tts_failed` | El modelo elegido no acepta síntesis (el caso de Chirp de §2) o está caído |
+| `tts_failed` | El modelo elegido no acepta síntesis o está caído; el detalle trae el mensaje del proveedor |
+| `no_voice_selected` | ElevenLabs sin voz elegida. Abrí Ajustes: se completa sola con la primera voz de la cuenta |
+| `tts_quota_exceeded` | ElevenLabs sin créditos en el plan |
+| Suena la voz del navegador sin pedirlo | Falló la síntesis en la nube y entró el fallback; el banner del lector dice por qué |
 | `ENCRYPTION_KEY must decode to exactly 32 bytes` | Usá `openssl rand -base64 32` |
 | La sesión se pierde al recargar en local | La cookie es `Secure` solo en https; en `http://127.0.0.1` no debería pasar. Revisá que estés en 127.0.0.1 y no en un dominio raro |
 | El audio no arranca en el celular | Tiene que salir de un tap; si tocaste play y no suena, revisá el volumen de medios |

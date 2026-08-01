@@ -152,8 +152,13 @@ export function buildChunks(
 }
 
 /** sha-256 hex of the cache identity for a chunk. Must match the server's check. */
-export async function chunkHash(model: string, voice: string, text: string): Promise<string> {
-  const data = new TextEncoder().encode(`${model}|${voice}|${text}`)
+export async function chunkHash(
+  provider: string,
+  model: string,
+  voice: string,
+  text: string,
+): Promise<string> {
+  const data = new TextEncoder().encode(`${provider}|${model}|${voice}|${text}`)
   const digest = await crypto.subtle.digest('SHA-256', data)
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }

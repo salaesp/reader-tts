@@ -3,7 +3,7 @@
 Aplicación web instalable (PWA) para escuchar EPUBs con voces de IA.
 
 - Subís tus `.epub` y quedan guardados en tu cuenta
-- Text-to-speech vía **OpenRouter** (`POST /api/v1/audio/speech`), modelo configurable
+- Text-to-speech vía **OpenRouter** o **ElevenLabs**, a elección y con modelo configurable
 - Recuerda dónde quedaste, en cada dispositivo
 - Interfaz y lectura en **español** e **inglés**
 - Login con **Google**
@@ -22,14 +22,18 @@ Aplicación web instalable (PWA) para escuchar EPUBs con voces de IA.
 
 ### Decisiones que conviene conocer
 
-**La API key de OpenRouter nunca llega al navegador.** Se guarda cifrada con
-AES-GCM en D1 y solo se descifra dentro del Worker, que hace la llamada a
-OpenRouter y devuelve el audio. Además evita depender del CORS de OpenRouter.
+**Las API keys nunca llegan al navegador.** Se guardan cifradas con AES-GCM en
+D1 y solo se descifran dentro del Worker, que hace la llamada al proveedor y
+devuelve el audio. Además evita depender del CORS de cada proveedor.
+
+**Cada proveedor guarda su propia key, modelo y voz.** Cambiar de OpenRouter a
+ElevenLabs y volver no pierde la configuración del otro, así se pueden comparar
+sin recargar nada. El proveedor activo es `tts_provider` en `settings`.
 
 **El audio se cachea solo en el dispositivo**, en IndexedDB, con clave
-`sha256(modelo|voz|texto)`. Volver a escuchar un capítulo en el mismo navegador
-no se cobra de nuevo; hacerlo en otro dispositivo sí, porque no hay copia en el
-servidor.
+`sha256(proveedor|modelo|voz|texto)`. Volver a escuchar un capítulo en el mismo
+navegador no se cobra de nuevo; hacerlo en otro dispositivo sí, porque no hay
+copia en el servidor.
 
 **Los archivos van a KV, no a R2.** R2 exige registrar una tarjeta aunque el
 free tier no cobre. KV lo evita, a cambio de un tope de 25 MiB por EPUB y de no
@@ -107,11 +111,20 @@ por push. Acordate de replicar `GOOGLE_CLIENT_ID`, `SESSION_SECRET` y
 
 Entrá, iniciá sesión con Google y andá a **Ajustes**:
 
-1. Pegá tu API key de [openrouter.ai/keys](https://openrouter.ai/keys).
-2. Elegí el **modelo de TTS**. La lista se arma en tiempo real con los modelos
-   de OpenRouter que generan audio; el default es `google/chirp-3`. Si ese slug
-   no acepta síntesis, elegí otro de la lista sin tocar código.
-3. Elegí la **voz** y probala con *Probar voz* antes de empezar un libro.
+1. Elegí el **proveedor de voz**: OpenRouter o ElevenLabs.
+2. Pegá la API key de ese proveedor —
+   [openrouter.ai/keys](https://openrouter.ai/keys) o
+   [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys).
+   Cada uno guarda la suya.
+3. Elegí el **modelo de TTS**. La lista se arma en tiempo real:
+   - OpenRouter: los modelos que generan audio.
+   - ElevenLabs: los modelos de la cuenta. `eleven_multilingual_v2` anda bien en
+     español; los `turbo`/`flash` son más baratos y rápidos.
+4. Elegí la **voz** y probala con *Probar voz* antes de empezar un libro. En
+   ElevenLabs las voces son las de tu cuenta y se eligen por nombre.
+
+Si al reproducir aparece «se usa la voz del navegador», el banner incluye el
+error que devolvió el proveedor: ahí está la causa (key, crédito, modelo o voz).
 
 ## Desarrollo
 
@@ -119,6 +132,13 @@ Entrá, iniciá sesión con Google y andá a **Ajustes**:
 npm run db:local        # aplica el esquema en la D1 local
 cp .dev.vars.example .dev.vars   # completá los valores
 npm run pages:dev       # build + wrangler pages dev en :8788
+```
+
+Si tu base ya existía antes del soporte de ElevenLabs, `schema.sql` no le agrega
+las columnas nuevas (usa `CREATE TABLE IF NOT EXISTS`). Corré una vez:
+
+```bash
+npm run db:migrate:local     # o db:migrate:remote en producción
 ```
 
 Para iterar sobre la interfaz con recarga en caliente, `npm run dev` levanta
@@ -137,16 +157,17 @@ functions/            Cloudflare Pages Functions (backend)
   api/
     auth/session.ts   login con Google, sesión y logout
     books/            listado, subida, descarga, portada, progreso
-    settings.ts       preferencias y API key cifrada
+    settings.ts       preferencias y API keys cifradas
     tts/              proxy de síntesis + lista de modelos
   lib/                cripto, sesión, verificación de tokens de Google
+    tts/              clientes de OpenRouter y ElevenLabs tras una interfaz común
 src/
   lib/
     epub.ts           parser de EPUB (container, OPF, spine, ToC, portada)
     segmenter.ts      oraciones (Intl.Segmenter) y chunks
     annotate.ts       mapea oraciones sobre el DOM renderizado
     player.ts         reproducción, prefetch, seguimiento de oración
-    tts.ts            motores OpenRouter y Web Speech
+    tts.ts            motores de nube (OpenRouter/ElevenLabs) y Web Speech
     store.ts          caché en IndexedDB (libros, archivos, audio, progreso)
   pages/              Login, Library, Reader, Settings
   i18n/               es.json / en.json
@@ -156,8 +177,10 @@ shared/types.ts       tipos compartidos entre front y functions
 ## Límites conocidos
 
 - Subida máxima de 25 MB por EPUB (tope de un valor en KV).
-- El texto se manda a OpenRouter en fragmentos de ~900 caracteres; libros muy
+- El texto se manda al proveedor en fragmentos de ~900 caracteres; libros muy
   largos generan muchas llamadas, y el costo lo define el modelo que elijas.
+- ElevenLabs sale en `mp3_44100_128`, el único formato disponible en todos los
+  planes.
 - La voz del navegador (Web Speech) es el respaldo sin conexión o sin API key:
   no requiere cuenta pero suena bastante peor.
 - Solo se soporta EPUB. PDF y MOBI quedan fuera.

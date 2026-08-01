@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReadingLang, TtsModel, UiLang } from '../../shared/types'
-import { GOOGLE_VOICES, OPENAI_VOICES } from '../../shared/types'
+import type { ReadingLang, TtsModel, TtsProvider, UiLang } from '../../shared/types'
+import { PROVIDER_KEY_URLS, PROVIDER_LABELS, TTS_PROVIDERS } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
 import { chunkHash } from '../lib/segmenter'
 import { useSession } from '../lib/session'
 import { store } from '../lib/store'
-import { browserVoiceAvailable, loadBrowserVoices, pickBrowserVoice } from '../lib/tts'
+import {
+  browserVoiceAvailable,
+  loadBrowserVoices,
+  pickBrowserVoice,
+  voicesFor,
+} from '../lib/tts'
 import { Banner, Button, Card, Field, Select, Spinner, TextInput } from '../components/ui'
 
 const CUSTOM_MODEL = '__custom__'
@@ -15,9 +20,13 @@ export default function Settings() {
   const { t, lang } = useI18n()
   const { user, settings, signOut, updateSettings } = useSession()
 
+  const provider = settings.ttsProvider
+  const active = settings.providers[provider]
+
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [models, setModels] = useState<TtsModel[]>([])
-  const [modelsError, setModelsError] = useState(false)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [loadingModels, setLoadingModels] = useState(true)
   const [customModel, setCustomModel] = useState(false)
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -25,20 +34,43 @@ export default function Settings() {
   const [usage, setUsage] = useState<number | null>(null)
   const testAudio = useRef<HTMLAudioElement | null>(null)
 
+  // The catalogue is per provider, and for ElevenLabs it also depends on the
+  // stored key — so it is refetched whenever either changes.
   useEffect(() => {
+    let cancelled = false
+    setLoadingModels(true)
+    setModelsError(null)
+
     void (async () => {
       try {
-        const { models: fetched } = await api.listTtsModels()
+        const { models: fetched } = await api.listTtsModels(provider)
+        if (cancelled) return
         setModels(fetched)
-        setCustomModel(fetched.length > 0 && !fetched.some((m) => m.id === settings.ttsModel))
-      } catch {
-        setModelsError(true)
+        setCustomModel(fetched.length > 0 && !fetched.some((m) => m.id === active.model))
+      } catch (err) {
+        if (cancelled) return
+        setModels([])
+        setModelsError(
+          err instanceof ApiError && err.code === 'no_api_key'
+            ? t('settings.modelsNeedKey')
+            : t('settings.modelsError'),
+        )
         setCustomModel(true)
+      } finally {
+        if (!cancelled) setLoadingModels(false)
       }
     })()
-    void store.estimateUsage().then(setUsage)
-    // Only the initial model list matters; later edits should not refetch.
+
+    return () => {
+      cancelled = true
+    }
+    // Only the provider and whether a key exists should trigger a refetch;
+    // editing the model must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, active.hasApiKey])
+
+  useEffect(() => {
+    void store.estimateUsage().then(setUsage)
   }, [])
 
   useEffect(() => () => testAudio.current?.pause(), [])
@@ -57,6 +89,16 @@ export default function Settings() {
     }
   }
 
+  const voiceOptions = voicesFor(provider, models, active.model)
+
+  // ElevenLabs voice ids are per account, so there is no sensible default to
+  // ship: the first voice the account exposes becomes the selection.
+  useEffect(() => {
+    if (active.voice || voiceOptions.length === 0 || saving) return
+    void save({ provider, ttsVoice: voiceOptions[0].id })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.voice, voiceOptions.length])
+
   const testVoice = async (): Promise<void> => {
     setTesting(true)
     setStatus(null)
@@ -72,12 +114,13 @@ export default function Settings() {
         speechSynthesis.cancel()
         speechSynthesis.speak(utterance)
       } else {
-        const hash = await chunkHash(settings.ttsModel, settings.ttsVoice, text)
+        const hash = await chunkHash(provider, active.model, active.voice, text)
         const blob = await api.synthesize({
           text,
           hash,
-          model: settings.ttsModel,
-          voice: settings.ttsVoice,
+          provider,
+          model: active.model,
+          voice: active.voice,
         })
         testAudio.current?.pause()
         const audio = new Audio(URL.createObjectURL(blob))
@@ -94,11 +137,6 @@ export default function Settings() {
       setTesting(false)
     }
   }
-
-  const selectedModel = models.find((model) => model.id === settings.ttsModel)
-  const voiceOptions = selectedModel?.voices.length
-    ? selectedModel.voices
-    : voiceFallback(settings.ttsModel)
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-24 pt-4">
@@ -135,7 +173,24 @@ export default function Settings() {
           {t('settings.voice')}
         </h2>
 
-        <Field label={t('settings.apiKey')} hint={t('settings.apiKeyHelp')}>
+        <Field label={t('settings.provider')} hint={t('settings.providerHelp')}>
+          <Select
+            value={provider}
+            onChange={(event) => void save({ ttsProvider: event.target.value as TtsProvider })}
+          >
+            {TTS_PROVIDERS.map((id) => (
+              <option key={id} value={id}>
+                {PROVIDER_LABELS[id]}
+                {settings.providers[id].hasApiKey ? '' : ` — ${t('settings.providerNoKey')}`}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field
+          label={t('settings.apiKey', { provider: PROVIDER_LABELS[provider] })}
+          hint={t('settings.apiKeyHelp')}
+        >
           <div className="flex gap-2">
             <TextInput
               type="password"
@@ -143,9 +198,9 @@ export default function Settings() {
               spellCheck={false}
               value={apiKeyDraft}
               placeholder={
-                settings.hasApiKey && settings.apiKeyHint
-                  ? t('settings.apiKeySaved', { hint: settings.apiKeyHint })
-                  : t('settings.apiKeyPlaceholder')
+                active.hasApiKey && active.apiKeyHint
+                  ? t('settings.apiKeySaved', { hint: active.apiKeyHint })
+                  : t(`settings.apiKeyPlaceholder.${provider}`)
               }
               onChange={(event) => setApiKeyDraft(event.target.value)}
             />
@@ -153,7 +208,7 @@ export default function Settings() {
               variant="primary"
               disabled={!apiKeyDraft.trim() || saving}
               onClick={() => {
-                void save({ apiKey: apiKeyDraft.trim() }).then(() => setApiKeyDraft(''))
+                void save({ provider, apiKey: apiKeyDraft.trim() }).then(() => setApiKeyDraft(''))
               }}
             >
               {t('common.save')}
@@ -163,17 +218,17 @@ export default function Settings() {
 
         <div className="-mt-2 flex flex-wrap gap-3 text-xs">
           <a
-            href="https://openrouter.ai/keys"
+            href={PROVIDER_KEY_URLS[provider]}
             target="_blank"
             rel="noreferrer noopener"
             className="text-sky-400 hover:underline"
           >
             {t('settings.apiKeyGet')}
           </a>
-          {settings.hasApiKey && (
+          {active.hasApiKey && (
             <button
               type="button"
-              onClick={() => void save({ apiKey: null })}
+              onClick={() => void save({ provider, apiKey: null })}
               className="text-slate-400 hover:text-red-400"
             >
               {t('settings.removeKey')}
@@ -181,16 +236,17 @@ export default function Settings() {
           )}
         </div>
 
-        <Field label={t('settings.model')} hint={t('settings.modelHelp')}>
+        <Field label={t('settings.model')} hint={t(`settings.modelHelp.${provider}`)}>
           <Select
-            value={customModel ? CUSTOM_MODEL : settings.ttsModel}
+            value={customModel ? CUSTOM_MODEL : active.model}
+            disabled={loadingModels}
             onChange={(event) => {
               if (event.target.value === CUSTOM_MODEL) {
                 setCustomModel(true)
                 return
               }
               setCustomModel(false)
-              void save({ ttsModel: event.target.value })
+              void save({ provider, ttsModel: event.target.value })
             }}
           >
             {models.map((model) => (
@@ -202,17 +258,18 @@ export default function Settings() {
           </Select>
         </Field>
 
-        {modelsError && <Banner tone="warn">{t('settings.modelsError')}</Banner>}
+        {modelsError && <Banner tone="warn">{modelsError}</Banner>}
 
         {customModel && (
           <div className="flex gap-2">
             <TextInput
-              defaultValue={settings.ttsModel}
+              key={`model-${provider}`}
+              defaultValue={active.model}
               spellCheck={false}
-              placeholder="hexgrad/kokoro-82m"
+              placeholder={provider === 'elevenlabs' ? 'eleven_multilingual_v2' : 'hexgrad/kokoro-82m'}
               onBlur={(event) => {
                 const value = event.target.value.trim()
-                if (value && value !== settings.ttsModel) void save({ ttsModel: value })
+                if (value && value !== active.model) void save({ provider, ttsModel: value })
               }}
             />
           </div>
@@ -221,25 +278,26 @@ export default function Settings() {
         <Field label={t('settings.voiceLabel')}>
           {voiceOptions.length > 0 ? (
             <Select
-              value={settings.ttsVoice}
-              onChange={(event) => void save({ ttsVoice: event.target.value })}
+              value={active.voice}
+              onChange={(event) => void save({ provider, ttsVoice: event.target.value })}
             >
               {voiceOptions.map((voice) => (
-                <option key={voice} value={voice}>
-                  {voice}
+                <option key={voice.id} value={voice.id}>
+                  {voice.name}
                 </option>
               ))}
-              {!voiceOptions.includes(settings.ttsVoice) && (
-                <option value={settings.ttsVoice}>{settings.ttsVoice}</option>
+              {active.voice && !voiceOptions.some((voice) => voice.id === active.voice) && (
+                <option value={active.voice}>{active.voice}</option>
               )}
             </Select>
           ) : (
             <TextInput
-              defaultValue={settings.ttsVoice}
+              key={`voice-${provider}`}
+              defaultValue={active.voice}
               spellCheck={false}
               onBlur={(event) => {
                 const value = event.target.value.trim()
-                if (value && value !== settings.ttsVoice) void save({ ttsVoice: value })
+                if (value && value !== active.voice) void save({ provider, ttsVoice: value })
               }}
             />
           )}
@@ -343,13 +401,3 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[unit]}`
 }
 
-/**
- * Voice names are per-provider and OpenRouter does not publish them, so the
- * list is inferred from the model id. An unknown provider falls back to a free
- * text field rather than to a wrong list.
- */
-function voiceFallback(modelId: string): string[] {
-  if (modelId.startsWith('openai/')) return OPENAI_VOICES
-  if (modelId.startsWith('google/')) return GOOGLE_VOICES
-  return []
-}

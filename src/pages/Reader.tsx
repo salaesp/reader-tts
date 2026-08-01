@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { Book } from '../../shared/types'
+import { PROVIDER_LABELS } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
 import { buildTextIndex, highlightSentences, wrapSentences } from '../lib/annotate'
@@ -15,7 +16,7 @@ import type { Chunk, Sentence } from '../lib/segmenter'
 import { buildChunks, splitSentences } from '../lib/segmenter'
 import { useSession } from '../lib/session'
 import { store } from '../lib/store'
-import { OpenRouterEngine, browserVoiceAvailable } from '../lib/tts'
+import { CloudTtsEngine, browserVoiceAvailable } from '../lib/tts'
 import { ChapterList } from '../components/ChapterList'
 import { PlayerBar } from '../components/PlayerBar'
 import { Banner, Button, Spinner } from '../components/ui'
@@ -46,6 +47,7 @@ export default function Reader({ bookId }: { bookId: string }) {
     sentenceIndex: -1,
     error: null,
     usingFallback: false,
+    fallbackReason: null,
   })
 
   const epubRef = useRef<EpubBook | null>(null)
@@ -61,12 +63,13 @@ export default function Reader({ bookId }: { bookId: string }) {
   chapterRef.current = chapter
   followRef.current = follow
 
+  const provider = settings.providers[settings.ttsProvider]
   const engine = useMemo(
     () =>
       settings.useBrowserVoice
         ? null
-        : new OpenRouterEngine(settings.ttsModel, settings.ttsVoice),
-    [settings.useBrowserVoice, settings.ttsModel, settings.ttsVoice],
+        : new CloudTtsEngine(settings.ttsProvider, provider.model, provider.voice),
+    [settings.useBrowserVoice, settings.ttsProvider, provider.model, provider.voice],
   )
 
   // --- load the book ------------------------------------------------------
@@ -413,8 +416,8 @@ export default function Reader({ bookId }: { bookId: string }) {
             }
           >
             {playerState.error.code === 'no_api_key'
-              ? t('reader.needsKey')
-              : t('reader.invalidKey')}
+              ? t('reader.needsKey', { provider: PROVIDER_LABELS[settings.ttsProvider] })
+              : t('reader.invalidKey', { provider: PROVIDER_LABELS[settings.ttsProvider] })}
           </Banner>
         )}
 
@@ -432,7 +435,21 @@ export default function Reader({ bookId }: { bookId: string }) {
           )}
 
         {playerState.usingFallback && browserVoiceAvailable() && (
-          <Banner tone="info">{t('reader.fellBackToBrowser')}</Banner>
+          <Banner
+            tone="warn"
+            action={
+              <Button variant="primary" onClick={() => navigate({ name: 'settings' })}>
+                {t('reader.goToSettings')}
+              </Button>
+            }
+          >
+            {t('reader.fellBackToBrowser', { provider: PROVIDER_LABELS[settings.ttsProvider] })}
+            {playerState.fallbackReason && (
+              <span className="mt-1 block text-xs opacity-80">
+                {playerState.fallbackReason.detail ?? playerState.fallbackReason.code}
+              </span>
+            )}
+          </Banner>
         )}
 
         {settings.useBrowserVoice && (

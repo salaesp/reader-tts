@@ -1,4 +1,5 @@
-import type { ReadingLang } from '../../shared/types'
+import type { ReadingLang, TtsModel, TtsProvider, TtsVoice } from '../../shared/types'
+import { GOOGLE_VOICES, OPENAI_VOICES } from '../../shared/types'
 import { ApiError, api } from './api'
 import { chunkHash } from './segmenter'
 import { store } from './store'
@@ -6,8 +7,9 @@ import { store } from './store'
 /**
  * Two ways to turn a chunk of text into speech:
  *
- *  - `OpenRouterEngine` renders audio server-side and hands back a Blob, which
- *    the player schedules like any other audio source. Results are cached in
+ *  - `CloudTtsEngine` renders audio server-side — through OpenRouter or
+ *    ElevenLabs, whichever the user picked — and hands back a Blob, which the
+ *    player schedules like any other audio source. Results are cached in
  *    IndexedDB, so re-listening on this device is free.
  *  - `BrowserVoiceEngine` speaks through the Web Speech API. No key, no cost,
  *    works offline — but it produces no audio buffer, so the player drives it
@@ -31,17 +33,18 @@ export class MissingApiKeyError extends Error {
   }
 }
 
-export class OpenRouterEngine {
-  readonly kind = 'openrouter' as const
+export class CloudTtsEngine {
+  readonly kind = 'cloud' as const
 
   constructor(
+    readonly provider: TtsProvider,
     private readonly model: string,
     private readonly voice: string,
   ) {}
 
   /** Stable identity for a chunk, shared by the local and server caches. */
   hash(text: string): Promise<string> {
-    return chunkHash(this.model, this.voice, text)
+    return chunkHash(this.provider, this.model, this.voice, text)
   }
 
   async synthesize(
@@ -56,7 +59,14 @@ export class OpenRouterEngine {
 
     try {
       const blob = await api.synthesize(
-        { text, hash, model: this.model, voice: this.voice, bookId: context.bookId },
+        {
+          text,
+          hash,
+          provider: this.provider,
+          model: this.model,
+          voice: this.voice,
+          bookId: context.bookId,
+        },
         signal,
       )
       void store.saveAudio(hash, context.bookId, blob)
@@ -66,6 +76,37 @@ export class OpenRouterEngine {
       throw err
     }
   }
+}
+
+/**
+ * Voices to offer for the selected model.
+ *
+ * ElevenLabs voices belong to the account, not to the model, so every model in
+ * the response carries the same list — which means a model id typed by hand,
+ * one too new to be in the catalogue say, still gets the real picker.
+ *
+ * OpenRouter voices are per model and it publishes none of them, so they are
+ * inferred from the model id; an unrecognised one yields nothing and the UI
+ * offers a free text field rather than a wrong list.
+ */
+export function voicesFor(
+  provider: TtsProvider,
+  models: TtsModel[],
+  modelId: string,
+): TtsVoice[] {
+  const selected = models.find((model) => model.id === modelId)
+  if (selected?.voices.length) return selected.voices
+
+  if (provider === 'elevenlabs') {
+    return models.find((model) => model.voices.length > 0)?.voices ?? []
+  }
+
+  const names = modelId.startsWith('openai/')
+    ? OPENAI_VOICES
+    : modelId.startsWith('google/')
+      ? GOOGLE_VOICES
+      : []
+  return names.map((name) => ({ id: name, name }))
 }
 
 const VOICE_LOCALES: Record<ReadingLang, string[]> = {
