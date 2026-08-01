@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReadingLang, TtsModel, TtsProvider, TtsVoice, UiLang } from '../../shared/types'
-import { PROVIDER_KEY_URLS, PROVIDER_LABELS, TTS_PROVIDERS } from '../../shared/types'
+import {
+  PROVIDER_KEY_URLS,
+  PROVIDER_LABELS,
+  TTS_PROVIDERS,
+  describePricing,
+} from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
 import { chunkHash } from '../lib/segmenter'
@@ -116,6 +121,11 @@ export default function Settings() {
       setSaving(false)
     }
   }
+
+  const selectedPrice = describePricing(
+    models.find((model) => model.id === active.model)?.pricing ?? null,
+    t('settings.modelFree'),
+  )
 
   const catalogueVoices = voicesFor(provider, models, active.model)
   const catalogueSource = voiceSourceFor(provider, models, active.model)
@@ -305,14 +315,23 @@ export default function Settings() {
               void save({ provider, ttsModel: event.target.value })
             }}
           >
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name}
-              </option>
-            ))}
+            {models.map((model) => {
+              const price = describePricing(model.pricing, t('settings.modelFree'))
+              return (
+                <option key={model.id} value={model.id}>
+                  {price ? `${model.name} · ${price}` : model.name}
+                </option>
+              )
+            })}
             <option value={CUSTOM_MODEL}>{t('settings.modelCustom')}</option>
           </Select>
         </Field>
+
+        {selectedPrice && (
+          <p className="-mt-2 text-xs text-slate-400">
+            {t('settings.modelPriceHelp', { price: selectedPrice })}
+          </p>
+        )}
 
         {modelsError && <Banner tone="warn">{modelsError}</Banner>}
 

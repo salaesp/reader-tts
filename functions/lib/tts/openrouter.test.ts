@@ -112,3 +112,46 @@ describe('openRouter.synthesize without a voice', () => {
     expect((err as HttpError).code).toBe('no_voice_selected')
   })
 })
+
+describe('openRouter.listModels pricing', () => {
+  // The shape OpenRouter really returns for a speech model: the cost is in
+  // `prompt`, and `completion` is "0". Reading completion — as this used to —
+  // advertised paid models as free.
+  const catalogue = {
+    data: [
+      {
+        id: 'fish-audio/s1',
+        name: 'Fish Audio: S1',
+        architecture: { modality: 'text->speech', output_modalities: ['speech'] },
+        pricing: { prompt: '0.000015', completion: '0' },
+        supported_voices: null,
+      },
+      {
+        id: 'free/model',
+        name: 'Free',
+        architecture: { output_modalities: ['speech'] },
+        pricing: { prompt: '0', completion: '0' },
+      },
+    ],
+  }
+
+  it('bills on the input price, not the completion price', async () => {
+    mockFetch(new Response(JSON.stringify(catalogue), { status: 200 }))
+
+    const models = await openRouter.listModels('sk-or-v1-test')
+
+    expect(models.find((m) => m.id === 'fish-audio/s1')?.pricing).toEqual({
+      input: 0.000015,
+      output: 0,
+    })
+    expect(models.find((m) => m.id === 'free/model')?.pricing).toEqual({ input: 0, output: 0 })
+  })
+
+  it('marks a model with a null supported_voices as not having published any', async () => {
+    mockFetch(new Response(JSON.stringify(catalogue), { status: 200 }))
+
+    const models = await openRouter.listModels('sk-or-v1-test')
+
+    expect(models.find((m) => m.id === 'fish-audio/s1')?.voiceSource).toBe('unknown')
+  })
+})

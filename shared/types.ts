@@ -116,12 +116,51 @@ export interface TtsVoice {
  */
 export type VoiceSource = 'provider' | 'inferred' | 'unknown'
 
+/**
+ * What OpenRouter charges, in USD per token.
+ *
+ * Text-to-speech bills the text you send, so the cost sits in the *input*
+ * price; `completion` is reported as "0" for every speech model seen. Reading
+ * the completion price and showing that meant advertising paid models as free.
+ */
+export interface TtsPricing {
+  input: number | null
+  /** Only when a provider prices its audio output separately. */
+  output: number | null
+}
+
 export interface TtsModel {
   id: string
   name: string
   voices: TtsVoice[]
   voiceSource: VoiceSource
-  pricing: string | null
+  pricing: TtsPricing | null
+}
+
+/**
+ * Per-token prices are unreadable at their natural scale ($0.000015), so they
+ * are shown per million tokens the way OpenRouter's own catalogue does.
+ */
+export function formatPricePerMillion(usdPerToken: number): string {
+  const perMillion = usdPerToken * 1_000_000
+  if (perMillion === 0) return '0'
+  if (perMillion < 0.01) return `$${perMillion.toFixed(4)}`
+  const rounded = perMillion.toFixed(2).replace(/\.?0+$/, '')
+  return `$${rounded}`
+}
+
+/** A one-line price for a model, or null when nothing is published. */
+export function describePricing(pricing: TtsPricing | null, freeLabel: string): string | null {
+  if (!pricing) return null
+  const { input, output } = pricing
+  if (input === null && output === null) return null
+  if (!input && !output) return freeLabel
+
+  const parts: string[] = []
+  if (input) parts.push(`${formatPricePerMillion(input)}/M`)
+  // Almost always absent; shown only when a provider really does bill it.
+  if (output) parts.push(`+${formatPricePerMillion(output)}/M out`)
+  return parts.join(' ')
 }
 
 export interface TtsRequest {

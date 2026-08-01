@@ -1,4 +1,10 @@
-import type { AudioFormat, TtsModel, TtsVoice, VoiceSource } from '../../../shared/types'
+import type {
+  AudioFormat,
+  TtsModel,
+  TtsPricing,
+  TtsVoice,
+  VoiceSource,
+} from '../../../shared/types'
 import { inferVoices } from '../../../shared/types'
 import { HttpError } from '../http'
 import type { SynthesisRequest, SynthesisResult, TtsProviderClient } from './types'
@@ -197,13 +203,33 @@ function describeModel(model: OpenRouterModel): TtsModel {
   if (published.length > 0) voiceSource = 'provider'
   else if (voices.length > 0) voiceSource = 'inferred'
 
-  const pricing = model.pricing as Record<string, string> | undefined
-
   return {
     id: model.id,
     name: model.name ?? model.id,
     voices,
     voiceSource,
-    pricing: pricing?.audio ?? pricing?.completion ?? null,
+    pricing: readPricing(model.pricing as Record<string, string> | undefined),
   }
+}
+
+/**
+ * Speech models bill the text sent, which OpenRouter reports under `prompt`;
+ * `completion` comes back as "0" for all of them. Reading completion — as this
+ * did — showed every paid model as free.
+ */
+function readPricing(pricing: Record<string, string> | undefined): TtsPricing | null {
+  if (!pricing) return null
+
+  const input = toNumber(pricing.prompt ?? pricing.input)
+  const output = toNumber(pricing.audio ?? pricing.completion)
+  if (input === null && output === null) return null
+
+  return { input, output }
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || !value.trim()) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }

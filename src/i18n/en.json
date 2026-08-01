@@ -74,6 +74,8 @@
   "settings.model": "TTS model",
   "settings.modelHelp.openrouter": "Lists the OpenRouter models that produce audio.",
   "settings.modelHelp.elevenlabs": "eleven_multilingual_v2 handles Spanish well; the turbo/flash models are cheaper and faster.",
+  "settings.modelFree": "free",
+  "settings.modelPriceHelp": "Price: {price} tokens of text sent. A typical novel is around half a million.",
   "settings.modelCustom": "Other (type the id)",
   "settings.modelsError": "Could not load the model list. You can type the id manually.",
   "settings.modelsNeedKey": "Add the API key to see this account's models and voices.",
