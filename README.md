@@ -74,8 +74,9 @@ Los ids de D1 y KV son **propios de tu cuenta**: no pueden venir en el repo, y
 Cloudflare valida los bindings al recibir el deploy, así que un id que no existe
 rechaza *todos* los deploys por igual — el código que estés subiendo no
 interviene. Por eso `wrangler.toml` trae `PASTE_D1_DATABASE_ID` y
-`PASTE_KV_NAMESPACE_ID` en lugar de valores con pinta de reales, y
-`npm run pages:deploy` se niega a correr si siguen ahí.
+`PASTE_KV_NAMESPACE_ID` en lugar de valores con pinta de reales, y todo comando
+que los use (`pages:deploy`, `db:remote`, `db:status`) se niega a correr
+mientras sigan ahí, diciéndote cuál falta.
 
 Seguí los pasos en este orden; cada uno tiene con qué comprobarlo.
 
