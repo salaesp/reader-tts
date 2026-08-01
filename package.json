@@ -14,8 +14,9 @@
     "db:remote": "wrangler d1 migrations apply reader-tts --remote",
     "db:status": "wrangler d1 migrations list reader-tts --remote",
     "pages:dev": "npm run db:local && npm run build && wrangler pages dev",
+    "preflight": "node scripts/preflight-deploy.mjs",
     "//pages:deploy": "Migrations run before the upload: they are additive, so the old code tolerates the new schema, while new code on an un-migrated database does not.",
-    "pages:deploy": "npm run build && npm run db:remote && wrangler pages deploy"
+    "pages:deploy": "npm run preflight && npm run build && npm run db:remote && wrangler pages deploy"
   },
   "dependencies": {
     "dompurify": "^3.2.7",

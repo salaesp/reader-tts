@@ -68,33 +68,77 @@ saca a la PWA instalada del modo standalone en Android/iOS.
    No hace falta configurar URIs de redirección: el flujo es por popup.
 5. Copiá el **Client ID**. El *client secret* no se usa.
 
-### 2. Cloudflare — base, bucket y secretos
+### 2. Cloudflare — proyecto, base y almacenamiento
+
+Los ids de D1 y KV son **propios de tu cuenta**: no pueden venir en el repo, y
+Cloudflare valida los bindings al recibir el deploy, así que un id que no existe
+rechaza *todos* los deploys por igual — el código que estés subiendo no
+interviene. Por eso `wrangler.toml` trae `PASTE_D1_DATABASE_ID` y
+`PASTE_KV_NAMESPACE_ID` en lugar de valores con pinta de reales, y
+`npm run pages:deploy` se niega a correr si siguen ahí.
+
+Seguí los pasos en este orden; cada uno tiene con qué comprobarlo.
 
 ```bash
 npm install
-
-# Base de datos
-npx wrangler d1 create reader-tts        # copiá el database_id a wrangler.toml
-npm run db:remote                        # aplica las migraciones pendientes
-
-# Almacenamiento de archivos
-npx wrangler kv namespace create FILES   # copiá el id a wrangler.toml
+npx wrangler login
 ```
 
-Poné el Client ID en `wrangler.toml`:
+**1. Crear el proyecto de Pages.** Tiene que existir antes de poder cargarle
+secretos.
+
+```bash
+npx wrangler pages project create reader-tts --production-branch main
+npx wrangler pages project list          # comprobación: aparece reader-tts
+```
+
+**2. Crear la base y el almacenamiento**, y pegar los dos ids en
+`wrangler.toml`:
+
+```bash
+npx wrangler d1 create reader-tts        # → database_id
+npx wrangler kv namespace create FILES   # → id
+```
+
+```toml
+[[d1_databases]]
+database_id = "…"        # reemplaza PASTE_D1_DATABASE_ID
+
+[[kv_namespaces]]
+id = "…"                 # reemplaza PASTE_KV_NAMESPACE_ID
+```
+
+```bash
+npx wrangler d1 list                     # comprobación: el id coincide
+npx wrangler kv namespace list
+```
+
+**3. Crear las tablas.** `d1 create` deja la base **vacía**: sin esto la app
+responde 500 aunque el binding esté perfecto.
+
+```bash
+npm run db:remote
+npm run db:status                        # comprobación: 0001 y 0002 aplicadas
+```
+
+**4. Configuración y secretos.** El Client ID va en `wrangler.toml` (lo necesita
+el navegador, no es secreto):
 
 ```toml
 [vars]
 GOOGLE_CLIENT_ID = "xxxxx.apps.googleusercontent.com"
 ```
 
-Y cargá los secretos (nunca van al repo):
-
 ```bash
-openssl rand -base64 32   # usá la salida para cada uno
+openssl rand -base64 32   # una salida distinta para cada uno
 npx wrangler pages secret put SESSION_SECRET
-npx wrangler pages secret put ENCRYPTION_KEY   # debe decodificar a 32 bytes
+npx wrangler pages secret put ENCRYPTION_KEY    # debe decodificar a 32 bytes
+npx wrangler pages secret list                  # comprobación: los dos figuran
 ```
+
+`ENCRYPTION_KEY` cifra las API keys guardadas: si la cambiás después, las keys
+que ya estén en la base dejan de poder descifrarse y hay que volver a cargarlas
+desde Ajustes.
 
 ### 3. Desplegar
 
@@ -102,30 +146,36 @@ npx wrangler pages secret put ENCRYPTION_KEY   # debe decodificar a 32 bytes
 npm run pages:deploy
 ```
 
-Ese script hace build, **aplica las migraciones pendientes** y recién después
-sube el deploy. El orden importa: las migraciones son aditivas, así que el
-código viejo tolera el esquema nuevo, pero el código nuevo contra una base sin
-migrar no. Aplicar es idempotente, así que correrlo en cada deploy no necesita
-ninguna guarda.
+Hace, en este orden: preflight de los ids → build → migraciones → subida. Las
+migraciones van **antes** de la subida a propósito: los cambios de esquema son
+aditivos, así que el código viejo tolera el esquema nuevo, pero el código nuevo
+contra una base sin migrar no. Aplicar es idempotente, así que no necesita
+guarda.
 
-En el panel de Cloudflare Pages, conectá el repo si preferís deploy automático
-por push. Acordate de replicar `GOOGLE_CLIENT_ID`, `SESSION_SECRET` y
-`ENCRYPTION_KEY` en las variables del proyecto, y de asociar los bindings `DB`
-(D1) y `FILES` (KV).
-
-**Con deploy automático por push, `pages:deploy` no se ejecuta** — Cloudflare
-corre el *build command* y sube `dist/`. Para que las migraciones entren igual,
-poné como build command:
+Comprobación de que quedó vivo, sin necesidad de iniciar sesión:
 
 ```bash
-npm run build && npm run db:remote
+curl https://reader-tts.pages.dev/api/config     # devuelve el googleClientId
 ```
 
-y agregá en las variables de *build* del proyecto un `CLOUDFLARE_API_TOKEN` con
-permiso **D1: Edit** más `CLOUDFLARE_ACCOUNT_ID`; sin eso wrangler no se puede
-autenticar dentro del contenedor de build. Ojo con las *preview branches*: usan
-la misma base, así que si no querés que una rama migre producción, guardá el
-paso con `[ "$CF_PAGES_BRANCH" = main ]`.
+Ese endpoint **no toca D1**. Si responde pero la biblioteca tira 500 al iniciar
+sesión, el problema es el binding `DB` o las migraciones, no el deploy.
+
+#### Si preferís deploy automático por push
+
+Conectá el repo desde el panel de Pages. Tené en cuenta que **`pages:deploy` no
+se ejecuta**: Cloudflare corre el *build command* y sube `dist/`. Entonces:
+
+- Build command: `npm run build && npm run db:remote`
+- Variables de *build*: `CLOUDFLARE_API_TOKEN` con permiso **D1: Edit** y
+  `CLOUDFLARE_ACCOUNT_ID`. Sin eso wrangler no se autentica en el contenedor.
+- Los bindings del panel (*Settings → Bindings*) son **otro lugar** distinto del
+  `wrangler.toml`: hay que cargar `DB` y `FILES` ahí también.
+- Las *preview branches* usan la misma base. Si no querés que una rama migre
+  producción, guardá el paso con `[ "$CF_PAGES_BRANCH" = main ]`.
+
+Es el camino con más superficie de error de los dos. Si el deploy a mano te
+alcanza, quedate con `npm run pages:deploy`.
 
 ### Cambios de esquema
 

@@ -101,18 +101,29 @@ Para cambiar los defaults del proyecto: `DEFAULT_TTS_MODEL`,
 5. No necesitás URIs de redirección ni client secret: el flujo es por popup.
 
 ### Cloudflare
+El paso a paso completo, con una comprobación por etapa, está en el README
+(«2. Cloudflare» y «3. Desplegar»). Resumido:
+
 ```bash
+npx wrangler pages project create reader-tts --production-branch main
 npx wrangler d1 create reader-tts          # pegá el database_id en wrangler.toml
-npm run db:remote                          # aplica las migraciones pendientes
 npx wrangler kv namespace create FILES     # pegá el id en wrangler.toml
+npm run db:remote                          # crea las tablas: d1 create deja la base vacía
 npx wrangler pages secret put SESSION_SECRET
 npx wrangler pages secret put ENCRYPTION_KEY
 npm run pages:deploy
 ```
 
 `GOOGLE_CLIENT_ID` va en `[vars]` de `wrangler.toml` (no es secreto: el browser
-lo necesita). Si conectás el repo al panel de Pages, replicá las tres variables
-ahí y asociá los bindings `DB` (D1) y `FILES` (KV).
+lo necesita).
+
+**Los ids de D1 y KV son de tu cuenta y no pueden venir en el repo.** Cloudflare
+valida los bindings al recibir el deploy, así que un id inexistente rechaza
+todos los deploys por igual, sin importar qué cambió en el código — un modo de
+falla que desde el log parece «el deploy está roto» y no «esta línea está mal».
+Por eso los valores en `wrangler.toml` son `PASTE_…` y `pages:deploy` corre
+antes `scripts/preflight-deploy.mjs`, que corta con un mensaje explicando qué
+falta.
 
 ### OpenRouter / ElevenLabs
 Las keys se cargan **desde Ajustes dentro de la app**, no en el repo ni en

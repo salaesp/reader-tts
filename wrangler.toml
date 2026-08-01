@@ -10,16 +10,22 @@ pages_build_output_dir = "dist"
 [vars]
 GOOGLE_CLIENT_ID = "605196260972-luhckq64ouv44t920lf5cdjs2i0mckfn.apps.googleusercontent.com"
 
-# Create with: wrangler d1 create reader-tts
-# then paste the returned database_id here.
+# Create with: wrangler d1 create reader-tts, then paste the returned
+# database_id below — it is specific to your Cloudflare account.
+#
+# Cloudflare validates bindings at deploy time, so an id that does not exist in
+# the account fails EVERY deploy, no matter what changed in the code. The
+# placeholder is deliberately not a well-formed id: `npm run pages:deploy`
+# checks for it and stops with an explanation instead of letting the API
+# answer with something cryptic.
 #
 # Schema changes are numbered files under migrations/. Wrangler records which
-# ones ran in a d1_migrations table, so applying is idempotent and `npm run
-# pages:deploy` can do it on every deploy without a guard.
+# ones ran in a d1_migrations table, so applying is idempotent and
+# `npm run pages:deploy` can do it on every deploy without a guard.
 [[d1_databases]]
 binding = "DB"
 database_name = "reader-tts"
-database_id = "055f160e-1126-431a-b41d-31c7cb823d4c"
+database_id = "PASTE_D1_DATABASE_ID"
 migrations_dir = "migrations"
 
 # Blob storage for EPUBs and covers. KV rather than R2 because R2 requires a
@@ -27,4 +33,4 @@ migrations_dir = "migrations"
 # Create with: wrangler kv namespace create FILES
 [[kv_namespaces]]
 binding = "FILES"
-id = "bb00390202254bc4ae416998df60cdc0"
+id = "PASTE_KV_NAMESPACE_ID"
