@@ -35,7 +35,7 @@ export default function Reader({ bookId }: { bookId: string }) {
   const [book, setBook] = useState<Book | null>(null)
   const [chapters, setChapters] = useState<EpubChapter[]>([])
   const [chapter, setChapter] = useState<ChapterState | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [failedToLoad, setFailedToLoad] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showChapters, setShowChapters] = useState(false)
   const [sleepMinutes, setSleepMinutes] = useState(0)
@@ -78,7 +78,7 @@ export default function Reader({ bookId }: { bookId: string }) {
 
     void (async () => {
       setLoading(true)
-      setLoadError(null)
+      setFailedToLoad(false)
 
       try {
         // Metadata: prefer the server, fall back to the offline copy.
@@ -122,7 +122,7 @@ export default function Reader({ bookId }: { bookId: string }) {
         await loadChapter(startPositionRef.current.chapterIndex)
       } catch (err) {
         console.error('failed to open book', err)
-        if (!cancelled) setLoadError(t('reader.loadError'))
+        if (!cancelled) setFailedToLoad(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -137,9 +137,10 @@ export default function Reader({ bookId }: { bookId: string }) {
       epubRef.current?.dispose()
       epubRef.current = null
     }
-    // loadChapter is stable for the lifetime of this book.
+    // Only the book identity should tear this down and reload: translations and
+    // loadChapter change for reasons that must not restart the whole book.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, t])
+  }, [bookId])
 
   // --- chapter loading ----------------------------------------------------
 
@@ -207,6 +208,19 @@ export default function Reader({ bookId }: { bookId: string }) {
   useEffect(() => {
     playerRef.current?.setRate(settings.speed)
   }, [settings.speed])
+
+  // Sentence splitting is locale-dependent, so switching reading language has
+  // to re-segment the chapter that is already open.
+  const readingLang = settings.readingLang
+  const firstSegmentation = useRef(true)
+  useEffect(() => {
+    if (firstSegmentation.current) {
+      firstSegmentation.current = false
+      return
+    }
+    const index = chapterRef.current?.index
+    if (index !== undefined) void loadChapter(index)
+  }, [readingLang, loadChapter])
 
   // --- highlighting -------------------------------------------------------
 
@@ -345,10 +359,10 @@ export default function Reader({ bookId }: { bookId: string }) {
     )
   }
 
-  if (loadError || !book) {
+  if (failedToLoad || !book) {
     return (
       <div className="mx-auto max-w-md px-4 py-24 text-center">
-        <Banner tone="error">{loadError ?? t('reader.loadError')}</Banner>
+        <Banner tone="error">{t('reader.loadError')}</Banner>
         <Button className="mt-4" onClick={() => navigate({ name: 'library' })}>
           {t('nav.back')}
         </Button>
