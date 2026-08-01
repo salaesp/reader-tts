@@ -76,6 +76,8 @@ export const elevenLabs: TtsProviderClient = {
         id: model.model_id,
         name: model.name ?? model.model_id,
         voices,
+        // Always the account's real voices, never a guess.
+        voiceSource: 'provider' as const,
         pricing: null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name))

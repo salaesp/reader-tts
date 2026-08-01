@@ -109,11 +109,18 @@ export interface TtsVoice {
   name: string
 }
 
+/**
+ * Where a model's voice list came from. Worth showing: a guessed list that
+ * happens to be wrong produces a 400 with nothing pointing at the voice, so
+ * the reader should know when they are looking at one.
+ */
+export type VoiceSource = 'provider' | 'inferred' | 'unknown'
+
 export interface TtsModel {
   id: string
   name: string
-  /** Voices advertised by the provider, when available. */
   voices: TtsVoice[]
+  voiceSource: VoiceSource
   pricing: string | null
 }
 
@@ -185,3 +192,22 @@ export const GOOGLE_VOICES = [
   'Puck',
   'Zephyr',
 ]
+
+/**
+ * Last resort when OpenRouter publishes no voices for a model: guess from the
+ * id. Only these two providers can be guessed at all, and even then the guess
+ * can go stale — anything else returns nothing so the UI offers a free text
+ * field rather than a list that produces 400s.
+ *
+ * Shared so the server and the Settings screen agree on the same guess; they
+ * both need it, the server for the catalogue and the client for a model id
+ * typed by hand.
+ */
+export function inferVoices(modelId: string): TtsVoice[] {
+  const names = modelId.startsWith('openai/')
+    ? OPENAI_VOICES
+    : modelId.startsWith('google/')
+      ? GOOGLE_VOICES
+      : []
+  return names.map((name) => ({ id: name, name }))
+}

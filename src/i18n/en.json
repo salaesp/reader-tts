@@ -78,6 +78,8 @@
   "settings.modelsError": "Could not load the model list. You can type the id manually.",
   "settings.modelsNeedKey": "Add the API key to see this account's models and voices.",
   "settings.voiceLabel": "Voice",
+  "settings.voiceInferred": "OpenRouter publishes no voices for this model: this list is guessed from the id and may be wrong.",
+  "settings.voiceUnknown": "the model's voice id, e.g. af_bella",
   "settings.testVoice": "Test voice",
   "settings.testing": "Generating…",
   "settings.testText": "Hi, this is how your book will sound.",

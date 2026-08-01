@@ -24,6 +24,12 @@ export interface TtsProviderClient {
   synthesize(request: SynthesisRequest): Promise<SynthesisResult>
   /** Models the account can use for synthesis, with their voices when known. */
   listModels(apiKey: string | null): Promise<TtsModel[]>
+  /**
+   * The provider's own response for the first `limit` models, unprocessed.
+   * Only for finding out where a provider hides its voice list; optional
+   * because a provider whose schema is documented has nothing to reveal.
+   */
+  rawModels?(apiKey: string | null, limit: number): Promise<unknown>
 }
 
 export function truncate(value: string, max = 500): string {

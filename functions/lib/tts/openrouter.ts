@@ -1,7 +1,9 @@
-import type { AudioFormat, TtsModel, TtsVoice } from '../../../shared/types'
+import type { AudioFormat, TtsModel, VoiceSource } from '../../../shared/types'
+import { inferVoices } from '../../../shared/types'
 import { HttpError } from '../http'
 import type { SynthesisRequest, SynthesisResult, TtsProviderClient } from './types'
 import { truncate } from './types'
+import { findVoices } from './voices'
 import { parsePcmFormat, pcmToWav } from './wav'
 
 const SPEECH_URL = 'https://openrouter.ai/api/v1/audio/speech'
@@ -24,8 +26,11 @@ interface OpenRouterModel {
   }
   pricing?: Record<string, string>
   supported_parameters?: string[]
-  /** Not part of the documented schema; used when a provider advertises it. */
-  voices?: unknown
+  /**
+   * Voices are not in the documented schema and their location varies, so the
+   * whole entry is handed to findVoices rather than one field being read.
+   */
+  [key: string]: unknown
 }
 
 export const openRouter: TtsProviderClient = {
@@ -60,26 +65,29 @@ export const openRouter: TtsProviderClient = {
   },
 
   async listModels(apiKey: string | null): Promise<TtsModel[]> {
-    const response = await fetch(MODELS_URL, {
-      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
-      cf: { cacheTtl: 3600, cacheEverything: true },
-    } as RequestInit)
-
-    if (!response.ok) {
-      throw new HttpError(502, 'models_fetch_failed', `upstream status ${response.status}`)
-    }
-
-    const body = (await response.json()) as { data?: OpenRouterModel[] }
+    const body = await fetchModels(apiKey)
     return (body.data ?? [])
       .filter(producesAudio)
-      .map((model) => ({
-        id: model.id,
-        name: model.name ?? model.id,
-        voices: extractVoices(model),
-        pricing: model.pricing?.audio ?? model.pricing?.completion ?? null,
-      }))
+      .map(describeModel)
       .sort((a, b) => a.name.localeCompare(b.name))
   },
+
+  async rawModels(apiKey: string | null, limit: number): Promise<unknown> {
+    const body = await fetchModels(apiKey)
+    return (body.data ?? []).filter(producesAudio).slice(0, limit)
+  },
+}
+
+async function fetchModels(apiKey: string | null): Promise<{ data?: OpenRouterModel[] }> {
+  const response = await fetch(MODELS_URL, {
+    headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+    cf: { cacheTtl: 3600, cacheEverything: true },
+  } as RequestInit)
+
+  if (!response.ok) {
+    throw new HttpError(502, 'models_fetch_failed', `upstream status ${response.status}`)
+  }
+  return (await response.json()) as { data?: OpenRouterModel[] }
 }
 
 async function speak(
@@ -136,16 +144,27 @@ function producesAudio(model: OpenRouterModel): boolean {
   return modality.includes('->audio') || modality.includes('->speech')
 }
 
-function extractVoices(model: OpenRouterModel): TtsVoice[] {
-  const raw = model.voices
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((voice) => {
-      if (typeof voice === 'string') return { id: voice, name: voice }
-      const id = (voice as { id?: unknown })?.id
-      if (typeof id !== 'string') return null
-      const name = (voice as { name?: unknown })?.name
-      return { id, name: typeof name === 'string' ? name : id }
-    })
-    .filter((voice): voice is TtsVoice => voice !== null)
+/**
+ * Prefers the voices OpenRouter publishes for the model and only guesses when
+ * it publishes none. Guessing was the whole problem: `Kore` inferred from a
+ * `google/` prefix is right, but the same trick offers nothing for Voxtral or
+ * Kokoro and there is no signal that the resulting 400 was about the voice.
+ */
+function describeModel(model: OpenRouterModel): TtsModel {
+  const published = findVoices(model)
+  const voices = published.length > 0 ? published : inferVoices(model.id)
+
+  let voiceSource: VoiceSource = 'unknown'
+  if (published.length > 0) voiceSource = 'provider'
+  else if (voices.length > 0) voiceSource = 'inferred'
+
+  const pricing = model.pricing as Record<string, string> | undefined
+
+  return {
+    id: model.id,
+    name: model.name ?? model.id,
+    voices,
+    voiceSource,
+    pricing: pricing?.audio ?? pricing?.completion ?? null,
+  }
 }

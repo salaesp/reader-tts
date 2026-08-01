@@ -11,6 +11,7 @@ import {
   browserVoicesFor,
   loadBrowserVoices,
   pickBrowserVoice,
+  voiceSourceFor,
   voicesFor,
   writeVoicePreference,
 } from '../lib/tts'
@@ -114,6 +115,7 @@ export default function Settings() {
   }
 
   const voiceOptions = voicesFor(provider, models, active.model)
+  const voiceSource = voiceSourceFor(provider, models, active.model)
 
   // ElevenLabs voice ids are per account, so there is no sensible default to
   // ship: the first voice the account exposes becomes the selection.
@@ -299,7 +301,10 @@ export default function Settings() {
           </div>
         )}
 
-        <Field label={t('settings.voiceLabel')}>
+        <Field
+          label={t('settings.voiceLabel')}
+          hint={voiceSource === 'inferred' ? t('settings.voiceInferred') : undefined}
+        >
           {voiceOptions.length > 0 ? (
             <Select
               value={active.voice}
@@ -317,6 +322,7 @@ export default function Settings() {
           ) : (
             <TextInput
               key={`voice-${provider}`}
+              placeholder={t('settings.voiceUnknown')}
               defaultValue={active.voice}
               spellCheck={false}
               onBlur={(event) => {

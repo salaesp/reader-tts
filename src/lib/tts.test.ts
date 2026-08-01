@@ -4,7 +4,13 @@ import { OPENAI_VOICES } from '../../shared/types'
 import { voicesFor } from './tts'
 
 function model(id: string, voices: string[] = []): TtsModel {
-  return { id, name: id, pricing: null, voices: voices.map((v) => ({ id: v, name: v })) }
+  return {
+    id,
+    name: id,
+    pricing: null,
+    voiceSource: voices.length > 0 ? 'provider' : 'unknown',
+    voices: voices.map((v) => ({ id: v, name: v })),
+  }
 }
 
 describe('voicesFor', () => {

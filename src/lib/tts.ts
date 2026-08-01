@@ -1,5 +1,11 @@
-import type { ReadingLang, TtsModel, TtsProvider, TtsVoice } from '../../shared/types'
-import { GOOGLE_VOICES, OPENAI_VOICES } from '../../shared/types'
+import type {
+  ReadingLang,
+  TtsModel,
+  TtsProvider,
+  TtsVoice,
+  VoiceSource,
+} from '../../shared/types'
+import { inferVoices } from '../../shared/types'
 import { ApiError, api } from './api'
 import { chunkHash } from './segmenter'
 import { store } from './store'
@@ -81,13 +87,10 @@ export class CloudTtsEngine {
 /**
  * Voices to offer for the selected model.
  *
- * ElevenLabs voices belong to the account, not to the model, so every model in
- * the response carries the same list — which means a model id typed by hand,
- * one too new to be in the catalogue say, still gets the real picker.
- *
- * OpenRouter voices are per model and it publishes none of them, so they are
- * inferred from the model id; an unrecognised one yields nothing and the UI
- * offers a free text field rather than a wrong list.
+ * The catalogue already carries the real list where the provider publishes one,
+ * so this only handles what the catalogue cannot: a model id typed by hand.
+ * ElevenLabs voices belong to the account, so any model's list serves; for
+ * OpenRouter the id is all there is to go on.
  */
 export function voicesFor(
   provider: TtsProvider,
@@ -100,13 +103,25 @@ export function voicesFor(
   if (provider === 'elevenlabs') {
     return models.find((model) => model.voices.length > 0)?.voices ?? []
   }
+  return inferVoices(modelId)
+}
 
-  const names = modelId.startsWith('openai/')
-    ? OPENAI_VOICES
-    : modelId.startsWith('google/')
-      ? GOOGLE_VOICES
-      : []
-  return names.map((name) => ({ id: name, name }))
+/**
+ * Whether the offered voices are the provider's own or a guess from the model
+ * id. A wrong guess is a 400 that says nothing about the voice, so the reader
+ * is told which they are looking at.
+ */
+export function voiceSourceFor(
+  provider: TtsProvider,
+  models: TtsModel[],
+  modelId: string,
+): VoiceSource {
+  const selected = models.find((model) => model.id === modelId)
+  if (selected) return selected.voiceSource
+  if (provider === 'elevenlabs') {
+    return models.some((model) => model.voices.length > 0) ? 'provider' : 'unknown'
+  }
+  return inferVoices(modelId).length > 0 ? 'inferred' : 'unknown'
 }
 
 /**
