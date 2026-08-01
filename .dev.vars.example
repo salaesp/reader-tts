@@ -1,0 +1,5 @@
+# Local secrets for `wrangler pages dev`. Copy to .dev.vars (git-ignored).
+# GOOGLE_CLIENT_ID also lives in wrangler.toml [vars] for deployed environments.
+GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+SESSION_SECRET="generate-with: openssl rand -base64 32"
+ENCRYPTION_KEY="generate-with: openssl rand -base64 32"

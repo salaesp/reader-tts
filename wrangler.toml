@@ -1,0 +1,23 @@
+name = "reader-tts"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "dist"
+
+# Public, non-secret configuration. The OAuth client id is served to the browser
+# through /api/config, so it does not need to be baked into the bundle.
+# Secrets (SESSION_SECRET, ENCRYPTION_KEY) are set with:
+#   wrangler pages secret put SESSION_SECRET
+#   wrangler pages secret put ENCRYPTION_KEY
+[vars]
+GOOGLE_CLIENT_ID = ""
+
+# Create with: wrangler d1 create reader-tts
+# then paste the returned database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "reader-tts"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Create with: wrangler r2 bucket create reader-tts
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "reader-tts"
