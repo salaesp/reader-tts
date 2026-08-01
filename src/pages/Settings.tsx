@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReadingLang, TtsModel, TtsProvider, UiLang } from '../../shared/types'
+import type { ReadingLang, TtsModel, TtsProvider, TtsVoice, UiLang } from '../../shared/types'
 import { PROVIDER_KEY_URLS, PROVIDER_LABELS, TTS_PROVIDERS } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
@@ -35,6 +35,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [usage, setUsage] = useState<number | null>(null)
+  const [fetchedVoices, setFetchedVoices] = useState<{ model: string; voices: TtsVoice[] } | null>(
+    null,
+  )
   const [deviceVoices, setDeviceVoices] = useState<SpeechSynthesisVoice[]>([])
   const [deviceVoice, setDeviceVoice] = useState<string | null>(null)
   const testAudio = useRef<HTMLAudioElement | null>(null)
@@ -114,8 +117,35 @@ export default function Settings() {
     }
   }
 
-  const voiceOptions = voicesFor(provider, models, active.model)
-  const voiceSource = voiceSourceFor(provider, models, active.model)
+  const catalogueVoices = voicesFor(provider, models, active.model)
+  const catalogueSource = voiceSourceFor(provider, models, active.model)
+
+  // The catalogue leaves most voices out — OpenRouter puts them behind a
+  // per-model endpoint — so anything not published up front is asked for once
+  // the model is known. Real voices always beat the ones guessed from the id.
+  const usingFetched = fetchedVoices?.model === active.model && fetchedVoices.voices.length > 0
+  const voiceOptions = usingFetched ? fetchedVoices.voices : catalogueVoices
+  const voiceSource = usingFetched ? 'provider' : catalogueSource
+
+  useEffect(() => {
+    if (catalogueSource === 'provider' || !active.model) return
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const { voices, source } = await api.listTtsVoices(provider, active.model)
+        if (cancelled || source !== 'provider') return
+        setFetchedVoices({ model: active.model, voices })
+      } catch {
+        // Nothing published for this model: the guess and the free text field
+        // remain, which is what the screen already shows.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [provider, active.model, catalogueSource])
 
   // ElevenLabs voice ids are per account, so there is no sensible default to
   // ship: the first voice the account exposes becomes the selection.

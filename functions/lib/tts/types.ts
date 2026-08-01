@@ -1,4 +1,4 @@
-import type { AudioFormat, TtsModel } from '../../../shared/types'
+import type { AudioFormat, TtsModel, TtsVoice } from '../../../shared/types'
 
 export interface SynthesisRequest {
   apiKey: string
@@ -24,6 +24,12 @@ export interface TtsProviderClient {
   synthesize(request: SynthesisRequest): Promise<SynthesisResult>
   /** Models the account can use for synthesis, with their voices when known. */
   listModels(apiKey: string | null): Promise<TtsModel[]>
+  /**
+   * Voices for one model, when finding them costs an extra request and is
+   * therefore not worth doing for the whole catalogue. Optional: a provider
+   * whose catalogue already carries them has nothing more to fetch.
+   */
+  listVoices?(apiKey: string | null, modelId: string): Promise<TtsVoice[]>
   /**
    * The provider's own response for the first `limit` models, unprocessed.
    * Only for finding out where a provider hides its voice list; optional

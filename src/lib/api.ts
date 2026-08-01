@@ -5,7 +5,9 @@ import type {
   SettingsUpdate,
   TtsModel,
   TtsProvider,
+  TtsVoice,
   User,
+  VoiceSource,
 } from '../../shared/types'
 
 export class ApiError extends Error {
@@ -94,6 +96,12 @@ export const api = {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(progress),
       },
+    ),
+
+  /** Voices for one model; costs an upstream request, so it is asked for lazily. */
+  listTtsVoices: (provider: TtsProvider, model: string) =>
+    request<{ model: string; provider: TtsProvider; voices: TtsVoice[]; source: VoiceSource }>(
+      `/api/tts/voices?provider=${provider}&model=${encodeURIComponent(model)}`,
     ),
 
   listTtsModels: (provider?: TtsProvider) =>

@@ -1,4 +1,4 @@
-import type { AudioFormat, TtsModel, VoiceSource } from '../../../shared/types'
+import type { AudioFormat, TtsModel, TtsVoice, VoiceSource } from '../../../shared/types'
 import { inferVoices } from '../../../shared/types'
 import { HttpError } from '../http'
 import type { SynthesisRequest, SynthesisResult, TtsProviderClient } from './types'
@@ -72,10 +72,49 @@ export const openRouter: TtsProviderClient = {
       .sort((a, b) => a.name.localeCompare(b.name))
   },
 
+  /**
+   * Voices for one model, at the cost of a second request.
+   *
+   * The catalogue leaves `supported_voices` null for most models but hands out
+   * a per-model `links.details` pointing at its endpoints, where the providers
+   * describe what they actually accept. Doing this for the whole catalogue
+   * would be one request per model; doing it for the selected one is one
+   * request, made when Settings needs an answer.
+   */
+  async listVoices(apiKey: string | null, modelId: string): Promise<TtsVoice[]> {
+    const body = await fetchModels(apiKey)
+    const model = (body.data ?? []).find((entry) => entry.id === modelId)
+    if (!model) return []
+
+    const published = findVoices(model)
+    if (published.length > 0) return published
+
+    const response = await fetch(new URL(detailsPath(model), 'https://openrouter.ai'), {
+      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+      cf: { cacheTtl: 3600, cacheEverything: true },
+    } as RequestInit)
+    // No voices published is a normal answer, not a failure: the caller falls
+    // back to inference and to a free text field.
+    if (!response.ok) return []
+
+    return findVoices(await response.json())
+  },
+
   async rawModels(apiKey: string | null, limit: number): Promise<unknown> {
     const body = await fetchModels(apiKey)
     return (body.data ?? []).filter(producesAudio).slice(0, limit)
   },
+}
+
+/** The catalogue supplies this link; the fallback mirrors how it is built. */
+function detailsPath(model: OpenRouterModel): string {
+  const links = model.links
+  if (links !== null && typeof links === 'object') {
+    const details = (links as { details?: unknown }).details
+    if (typeof details === 'string' && details) return details
+  }
+  const slug = typeof model.canonical_slug === 'string' ? model.canonical_slug : model.id
+  return `/api/v1/models/${slug}/endpoints`
 }
 
 async function fetchModels(apiKey: string | null): Promise<{ data?: OpenRouterModel[] }> {
