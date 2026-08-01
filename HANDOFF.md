@@ -21,7 +21,7 @@ cp .dev.vars.example .dev.vars
 openssl rand -base64 32   # → SESSION_SECRET
 openssl rand -base64 32   # → ENCRYPTION_KEY (tiene que decodificar a 32 bytes)
 
-# Base local
+# Base local (aplica las migraciones)
 npm run db:local
 
 # Levantar
@@ -36,7 +36,7 @@ terminal y `npm run dev` en otra: Vite levanta en `:5173` y hace proxy de `/api`
 al Worker.
 
 ```bash
-npm test          # 71 tests
+npm test          # 92 tests
 npm run build     # typecheck + build
 ```
 
@@ -103,7 +103,7 @@ Para cambiar los defaults del proyecto: `DEFAULT_TTS_MODEL`,
 ### Cloudflare
 ```bash
 npx wrangler d1 create reader-tts          # pegá el database_id en wrangler.toml
-npm run db:remote
+npm run db:remote                          # aplica las migraciones pendientes
 npx wrangler kv namespace create FILES     # pegá el id en wrangler.toml
 npx wrangler pages secret put SESSION_SECRET
 npx wrangler pages secret put ENCRYPTION_KEY
@@ -117,13 +117,6 @@ ahí y asociá los bindings `DB` (D1) y `FILES` (KV).
 ### OpenRouter / ElevenLabs
 Las keys se cargan **desde Ajustes dentro de la app**, no en el repo ni en
 variables de entorno. Quedan cifradas en D1, una por proveedor.
-
-Si la base ya existía antes del soporte de ElevenLabs, agregale las columnas
-nuevas (`schema.sql` usa `CREATE TABLE IF NOT EXISTS` y no las toca):
-
-```bash
-npm run db:migrate:local     # y/o db:migrate:remote
-```
 
 ---
 
@@ -142,7 +135,7 @@ Dónde tocar según lo que quieras cambiar:
 | Tocar reproducción, prefetch, fallback | `src/lib/player.ts` |
 | Agregar/cambiar textos | `src/i18n/es.json`, `src/i18n/en.json` |
 | Agregar un endpoint | `functions/api/…` |
-| Cambiar el esquema de datos | `schema.sql` (+ correr `db:local` / `db:remote`) |
+| Cambiar el esquema de datos | `wrangler d1 migrations create` → archivo nuevo en `migrations/` |
 
 ```
 functions/            backend (Cloudflare Pages Functions)
@@ -212,6 +205,13 @@ primero que se reprodujo se quedaría pegado.
 `<audio>`. Así un mismo audio generado sirve para todas las velocidades (el hash
 de caché no incluye la velocidad) y el cambio es instantáneo. Varios modelos
 además rechazan el parámetro `speed`.
+
+**Las migraciones corren solas en el deploy.** `pages:deploy` hace build,
+aplica lo pendiente y recién ahí sube. El orden es a propósito: los cambios son
+aditivos, así que el código viejo tolera el esquema nuevo, pero el código nuevo
+contra una base sin migrar no. Wrangler lleva la cuenta en `d1_migrations`, así
+que aplicar dos veces no hace nada. Los archivos ya aplicados no se editan: se
+agrega uno nuevo.
 
 **Los archivos van a KV, no a R2.** R2 exige registrar una tarjeta aunque el
 free tier no cobre nada. KV lo evita, a cambio de un tope de 25 MiB por EPUB y

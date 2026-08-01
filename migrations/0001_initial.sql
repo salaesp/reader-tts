@@ -1,6 +1,8 @@
--- Reader TTS — D1 schema.
--- Apply locally:  npm run db:local
--- Apply remotely: npm run db:remote
+-- Initial schema.
+--
+-- Kept exactly as it was first deployed: a migration is a record of what ran,
+-- so editing one after the fact desynchronises every database that already
+-- applied it. Schema changes go in a new numbered file.
 
 CREATE TABLE IF NOT EXISTS users (
   id          TEXT PRIMARY KEY,
@@ -18,22 +20,12 @@ CREATE TABLE IF NOT EXISTS settings (
   openrouter_key_enc TEXT,
   -- Last 4 characters of the key, so the UI can show which key is stored.
   openrouter_key_hint TEXT,
-  tts_model         TEXT NOT NULL DEFAULT 'google/gemini-3.1-flash-tts-preview',
+  tts_model         TEXT NOT NULL DEFAULT 'google/chirp-3',
   tts_voice         TEXT NOT NULL DEFAULT 'Kore',
   speed             REAL NOT NULL DEFAULT 1.0,
   ui_lang           TEXT NOT NULL DEFAULT 'es',
   reading_lang      TEXT NOT NULL DEFAULT 'es',
   use_browser_voice INTEGER NOT NULL DEFAULT 0,
-  -- Which cloud backend synthesizes audio: 'openrouter' or 'elevenlabs'.
-  tts_provider      TEXT NOT NULL DEFAULT 'openrouter',
-  -- Same treatment as the OpenRouter key: AES-GCM ciphertext plus a hint.
-  elevenlabs_key_enc  TEXT,
-  elevenlabs_key_hint TEXT,
-  -- Model and voice are per provider so switching back and forth to compare
-  -- them does not overwrite the other provider's selection.
-  elevenlabs_model  TEXT NOT NULL DEFAULT 'eleven_multilingual_v2',
-  -- Empty until Settings picks one: voice ids are per account.
-  elevenlabs_voice  TEXT NOT NULL DEFAULT '',
   updated_at        INTEGER NOT NULL
 );
 

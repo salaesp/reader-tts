@@ -12,10 +12,15 @@ GOOGLE_CLIENT_ID = "605196260972-luhckq64ouv44t920lf5cdjs2i0mckfn.apps.googleuse
 
 # Create with: wrangler d1 create reader-tts
 # then paste the returned database_id here.
+#
+# Schema changes are numbered files under migrations/. Wrangler records which
+# ones ran in a d1_migrations table, so applying is idempotent and `npm run
+# pages:deploy` can do it on every deploy without a guard.
 [[d1_databases]]
 binding = "DB"
 database_name = "reader-tts"
 database_id = "055f160e-1126-431a-b41d-31c7cb823d4c"
+migrations_dir = "migrations"
 
 # Blob storage for EPUBs and covers. KV rather than R2 because R2 requires a
 # payment method on the account even inside the free tier.

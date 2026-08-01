@@ -17,7 +17,7 @@ Aplicación web instalable (PWA) para escuchar EPUBs con voces de IA.
 | PWA | `vite-plugin-pwa` (Workbox) |
 | EPUB | JSZip + DOMParser + DOMPurify (renderer propio) |
 | Server | Cloudflare Pages Functions |
-| Datos | Cloudflare D1 (SQLite) |
+| Datos | Cloudflare D1 (SQLite), migraciones versionadas |
 | Archivos | Cloudflare KV (epubs y portadas) |
 
 ### Decisiones que conviene conocer
@@ -75,7 +75,7 @@ npm install
 
 # Base de datos
 npx wrangler d1 create reader-tts        # copiá el database_id a wrangler.toml
-npm run db:remote                        # aplica schema.sql en producción
+npm run db:remote                        # aplica las migraciones pendientes
 
 # Almacenamiento de archivos
 npx wrangler kv namespace create FILES   # copiá el id a wrangler.toml
@@ -102,10 +102,42 @@ npx wrangler pages secret put ENCRYPTION_KEY   # debe decodificar a 32 bytes
 npm run pages:deploy
 ```
 
+Ese script hace build, **aplica las migraciones pendientes** y recién después
+sube el deploy. El orden importa: las migraciones son aditivas, así que el
+código viejo tolera el esquema nuevo, pero el código nuevo contra una base sin
+migrar no. Aplicar es idempotente, así que correrlo en cada deploy no necesita
+ninguna guarda.
+
 En el panel de Cloudflare Pages, conectá el repo si preferís deploy automático
 por push. Acordate de replicar `GOOGLE_CLIENT_ID`, `SESSION_SECRET` y
 `ENCRYPTION_KEY` en las variables del proyecto, y de asociar los bindings `DB`
 (D1) y `FILES` (KV).
+
+**Con deploy automático por push, `pages:deploy` no se ejecuta** — Cloudflare
+corre el *build command* y sube `dist/`. Para que las migraciones entren igual,
+poné como build command:
+
+```bash
+npm run build && npm run db:remote
+```
+
+y agregá en las variables de *build* del proyecto un `CLOUDFLARE_API_TOKEN` con
+permiso **D1: Edit** más `CLOUDFLARE_ACCOUNT_ID`; sin eso wrangler no se puede
+autenticar dentro del contenedor de build. Ojo con las *preview branches*: usan
+la misma base, así que si no querés que una rama migre producción, guardá el
+paso con `[ "$CF_PAGES_BRANCH" = main ]`.
+
+### Cambios de esquema
+
+```bash
+npx wrangler d1 migrations create reader-tts "lo-que-cambia"
+npm run db:local     # aplicar en local
+npm run db:status    # ver qué falta en producción
+```
+
+Los archivos ya aplicados **no se editan**: wrangler registra cuáles corrieron
+en una tabla `d1_migrations`, así que modificar uno desincroniza toda base que
+ya lo aplicó. Cada cambio va en un archivo numerado nuevo.
 
 ### 4. Configurar la app
 
@@ -129,16 +161,8 @@ error que devolvió el proveedor: ahí está la causa (key, crédito, modelo o v
 ## Desarrollo
 
 ```bash
-npm run db:local        # aplica el esquema en la D1 local
 cp .dev.vars.example .dev.vars   # completá los valores
-npm run pages:dev       # build + wrangler pages dev en :8788
-```
-
-Si tu base ya existía antes del soporte de ElevenLabs, `schema.sql` no le agrega
-las columnas nuevas (usa `CREATE TABLE IF NOT EXISTS`). Corré una vez:
-
-```bash
-npm run db:migrate:local     # o db:migrate:remote en producción
+npm run pages:dev       # migraciones + build + wrangler pages dev en :8788
 ```
 
 Para iterar sobre la interfaz con recarga en caliente, `npm run dev` levanta
@@ -172,6 +196,7 @@ src/
   pages/              Login, Library, Reader, Settings
   i18n/               es.json / en.json
 shared/types.ts       tipos compartidos entre front y functions
+migrations/           esquema versionado; se aplica solo en cada deploy
 ```
 
 ## Límites conocidos
