@@ -1,8 +1,15 @@
 import type { Api } from '../../../lib/env'
 import { HttpError, requireUser } from '../../../lib/http'
+import { getFile } from '../../../lib/storage'
 
-/** Streams the stored EPUB back to the client, with Range support for resumes. */
-export const onRequestGet: Api<'id'> = async ({ request, env, data, params }) => {
+/**
+ * Streams the stored EPUB back to the client.
+ *
+ * No Range support: the storage backend cannot serve partial reads, and the
+ * client fetches the whole file in one request. Advertising `accept-ranges`
+ * without honouring it would be worse than staying silent.
+ */
+export const onRequestGet: Api<'id'> = async ({ env, data, params }) => {
   const user = requireUser(data.user)
   const bookId = String(params.id)
 
@@ -11,30 +18,15 @@ export const onRequestGet: Api<'id'> = async ({ request, env, data, params }) =>
     .first<{ r2_key: string }>()
   if (!row) throw new HttpError(404, 'book_not_found')
 
-  const range = request.headers.get('range')
-  const object = await env.BUCKET.get(row.r2_key, range ? { range: request.headers } : undefined)
-  if (!object) throw new HttpError(404, 'file_not_found')
+  const file = await getFile(env, row.r2_key)
+  if (!file) throw new HttpError(404, 'file_not_found')
 
   const headers = new Headers()
-  object.writeHttpMetadata(headers)
   headers.set('content-type', 'application/epub+zip')
-  headers.set('etag', object.httpEtag)
+  headers.set('content-length', String(file.size))
+  // The key embeds a uuid and the bytes never change, so it doubles as an etag.
+  headers.set('etag', `"${row.r2_key}"`)
   headers.set('cache-control', 'private, max-age=31536000, immutable')
-  headers.set('accept-ranges', 'bytes')
 
-  const body = 'body' in object ? object.body : null
-  if (!body) throw new HttpError(404, 'file_not_found')
-
-  // R2 reports a range on full gets too, so the request header decides the
-  // status: answering 206 to a client that never asked for a range is wrong.
-  if (range && object.range && 'offset' in object.range) {
-    const offset = object.range.offset ?? 0
-    const length = object.range.length ?? object.size - offset
-    headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`)
-    headers.set('content-length', String(length))
-    return new Response(body, { status: 206, headers })
-  }
-
-  headers.set('content-length', String(object.size))
-  return new Response(body, { headers })
+  return new Response(file.body, { headers })
 }

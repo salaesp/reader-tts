@@ -8,7 +8,7 @@ import { store } from './store'
  *
  *  - `OpenRouterEngine` renders audio server-side and hands back a Blob, which
  *    the player schedules like any other audio source. Results are cached in
- *    IndexedDB (and in R2 by the Worker), so re-listening is free.
+ *    IndexedDB, so re-listening on this device is free.
  *  - `BrowserVoiceEngine` speaks through the Web Speech API. No key, no cost,
  *    works offline — but it produces no audio buffer, so the player drives it
  *    through the same interface with a synthetic "playback" lifecycle.

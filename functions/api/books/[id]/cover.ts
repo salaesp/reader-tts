@@ -1,5 +1,6 @@
 import type { Api } from '../../../lib/env'
 import { HttpError, requireUser } from '../../../lib/http'
+import { getFile } from '../../../lib/storage'
 
 export const onRequestGet: Api<'id'> = async ({ env, data, params }) => {
   const user = requireUser(data.user)
@@ -9,12 +10,13 @@ export const onRequestGet: Api<'id'> = async ({ env, data, params }) => {
     .first<{ cover_key: string | null }>()
   if (!row?.cover_key) throw new HttpError(404, 'cover_not_found')
 
-  const object = await env.BUCKET.get(row.cover_key)
-  if (!object) throw new HttpError(404, 'cover_not_found')
+  const file = await getFile(env, row.cover_key)
+  if (!file) throw new HttpError(404, 'cover_not_found')
 
   const headers = new Headers()
-  object.writeHttpMetadata(headers)
-  headers.set('etag', object.httpEtag)
+  headers.set('content-type', file.contentType)
+  headers.set('content-length', String(file.size))
+  headers.set('etag', `"${row.cover_key}"`)
   headers.set('cache-control', 'private, max-age=31536000, immutable')
-  return new Response(object.body, { headers })
+  return new Response(file.body, { headers })
 }

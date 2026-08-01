@@ -8,7 +8,8 @@ import { store } from '../lib/store'
 import { BookCard } from '../components/BookCard'
 import { Banner, Button, Spinner } from '../components/ui'
 
-const MAX_UPLOAD_BYTES = 60 * 1024 * 1024
+/** Mirrors MAX_VALUE_BYTES in functions/lib/storage.ts: the backend's hard cap. */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 type UploadState = { phase: 'idle' } | { phase: 'parsing' | 'uploading'; name: string }
 
@@ -55,7 +56,7 @@ export default function Library() {
       return
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError(t('library.tooLarge', { max: '60 MB' }))
+      setError(t('library.tooLarge', { max: '25 MB' }))
       return
     }
 
@@ -85,7 +86,7 @@ export default function Library() {
       console.error('upload failed', err)
       if (err instanceof EpubError) setError(t('library.invalidFile'))
       else if (err instanceof ApiError && err.code === 'file_too_large') {
-        setError(t('library.tooLarge', { max: '60 MB' }))
+        setError(t('library.tooLarge', { max: '25 MB' }))
       } else setError(t('library.uploadError'))
     } finally {
       setUpload({ phase: 'idle' })

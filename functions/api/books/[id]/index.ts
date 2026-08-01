@@ -1,5 +1,6 @@
 import type { Api } from '../../../lib/env'
 import { HttpError, json, requireUser } from '../../../lib/http'
+import { deleteFiles } from '../../../lib/storage'
 import { rowToBook } from '../index'
 
 interface Row {
@@ -53,21 +54,9 @@ export const onRequestDelete: Api<'id'> = async ({ env, data, params }) => {
     env.DB.prepare('DELETE FROM books WHERE id = ? AND user_id = ?').bind(bookId, user.id),
   ])
 
-  const keys = row.cover_key ? [row.r2_key, row.cover_key] : [row.r2_key]
-  await env.BUCKET.delete(keys)
-  await deleteAudioCache(env.BUCKET, `audio/${user.id}/${bookId}/`)
+  // Audio is not stored server-side, so there is no rendered audio to clean up
+  // here: the only copies live in the browser's IndexedDB cache.
+  await deleteFiles(env, row.cover_key ? [row.r2_key, row.cover_key] : [row.r2_key])
 
   return json({ ok: true })
-}
-
-/** Removes every cached audio chunk generated for a book. */
-async function deleteAudioCache(bucket: R2Bucket, prefix: string): Promise<void> {
-  let cursor: string | undefined
-  do {
-    const listing = await bucket.list({ prefix, cursor, limit: 1000 })
-    if (listing.objects.length > 0) {
-      await bucket.delete(listing.objects.map((object) => object.key))
-    }
-    cursor = listing.truncated ? listing.cursor : undefined
-  } while (cursor)
 }

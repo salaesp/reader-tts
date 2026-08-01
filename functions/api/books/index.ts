@@ -1,8 +1,10 @@
 import type { Book, Progress } from '../../../shared/types'
 import type { Api } from '../../lib/env'
 import { HttpError, json, requireUser } from '../../lib/http'
+import { MAX_VALUE_BYTES, deleteFiles, putFile } from '../../lib/storage'
 
-const MAX_EPUB_BYTES = 60 * 1024 * 1024
+/** Capped by the storage backend, not by us. */
+const MAX_EPUB_BYTES = MAX_VALUE_BYTES
 const MAX_COVER_BYTES = 4 * 1024 * 1024
 
 interface BookRow {
@@ -63,17 +65,13 @@ export const onRequestPost: Api = async ({ request, env, data }) => {
   const bookId = crypto.randomUUID()
   const r2Key = `epub/${user.id}/${bookId}.epub`
 
-  await env.BUCKET.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: 'application/epub+zip' },
-  })
+  await putFile(env, r2Key, await file.arrayBuffer(), 'application/epub+zip')
 
   let coverKey: string | null = null
   const cover = form.get('cover')
   if (cover instanceof File && cover.size > 0 && cover.size <= MAX_COVER_BYTES) {
     coverKey = `cover/${user.id}/${bookId}`
-    await env.BUCKET.put(coverKey, cover.stream(), {
-      httpMetadata: { contentType: cover.type || 'image/jpeg' },
-    })
+    await putFile(env, coverKey, await cover.arrayBuffer(), cover.type || 'image/jpeg')
   }
 
   const addedAt = Date.now()
@@ -86,7 +84,7 @@ export const onRequestPost: Api = async ({ request, env, data }) => {
       .run()
   } catch (err) {
     // Do not leave an orphaned object behind if the metadata insert fails.
-    await env.BUCKET.delete(coverKey ? [r2Key, coverKey] : [r2Key])
+    await deleteFiles(env, coverKey ? [r2Key, coverKey] : [r2Key])
     throw err
   }
 

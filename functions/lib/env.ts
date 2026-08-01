@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database
-  BUCKET: R2Bucket
+  /** Blob storage for EPUBs and covers. See functions/lib/storage.ts. */
+  FILES: KVNamespace
   /** OAuth 2.0 Web client id from the Google Cloud project. Public. */
   GOOGLE_CLIENT_ID: string
   /** Random secret used to sign session cookies. */

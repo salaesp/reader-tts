@@ -18,18 +18,23 @@ Aplicación web instalable (PWA) para escuchar EPUBs con voces de IA.
 | EPUB | JSZip + DOMParser + DOMPurify (renderer propio) |
 | Server | Cloudflare Pages Functions |
 | Datos | Cloudflare D1 (SQLite) |
-| Archivos | Cloudflare R2 (epubs, portadas, caché de audio) |
+| Archivos | Cloudflare KV (epubs y portadas) |
 
 ### Decisiones que conviene conocer
 
 **La API key de OpenRouter nunca llega al navegador.** Se guarda cifrada con
 AES-GCM en D1 y solo se descifra dentro del Worker, que hace la llamada a
-OpenRouter y devuelve el audio. Además evita depender del CORS de OpenRouter y
-permite cachear el audio en R2.
+OpenRouter y devuelve el audio. Además evita depender del CORS de OpenRouter.
 
-**El audio se cachea dos veces.** En R2 por usuario (`audio/{userId}/{bookId}/{hash}.mp3`)
-y en IndexedDB en el dispositivo. Volver a escuchar un capítulo no se cobra de
-nuevo. El hash es `sha256(modelo|voz|texto)`.
+**El audio se cachea solo en el dispositivo**, en IndexedDB, con clave
+`sha256(modelo|voz|texto)`. Volver a escuchar un capítulo en el mismo navegador
+no se cobra de nuevo; hacerlo en otro dispositivo sí, porque no hay copia en el
+servidor.
+
+**Los archivos van a KV, no a R2.** R2 exige registrar una tarjeta aunque el
+free tier no cobre. KV lo evita, a cambio de un tope de 25 MiB por EPUB y de no
+soportar descargas parciales (Range). El acceso está aislado en
+`functions/lib/storage.ts` para poder volver a R2 cambiando un solo archivo.
 
 **La velocidad se aplica en el reproductor**, no en la API: un mismo audio
 generado sirve para todas las velocidades y el cambio es instantáneo.
@@ -68,8 +73,8 @@ npm install
 npx wrangler d1 create reader-tts        # copiá el database_id a wrangler.toml
 npm run db:remote                        # aplica schema.sql en producción
 
-# Bucket de archivos
-npx wrangler r2 bucket create reader-tts
+# Almacenamiento de archivos
+npx wrangler kv namespace create FILES   # copiá el id a wrangler.toml
 ```
 
 Poné el Client ID en `wrangler.toml`:
@@ -96,7 +101,7 @@ npm run pages:deploy
 En el panel de Cloudflare Pages, conectá el repo si preferís deploy automático
 por push. Acordate de replicar `GOOGLE_CLIENT_ID`, `SESSION_SECRET` y
 `ENCRYPTION_KEY` en las variables del proyecto, y de asociar los bindings `DB`
-(D1) y `BUCKET` (R2).
+(D1) y `FILES` (KV).
 
 ### 4. Configurar la app
 
@@ -133,7 +138,7 @@ functions/            Cloudflare Pages Functions (backend)
     auth/session.ts   login con Google, sesión y logout
     books/            listado, subida, descarga, portada, progreso
     settings.ts       preferencias y API key cifrada
-    tts/              proxy de síntesis con caché en R2 + lista de modelos
+    tts/              proxy de síntesis + lista de modelos
   lib/                cripto, sesión, verificación de tokens de Google
 src/
   lib/
@@ -150,7 +155,7 @@ shared/types.ts       tipos compartidos entre front y functions
 
 ## Límites conocidos
 
-- Subida máxima de 60 MB por EPUB.
+- Subida máxima de 25 MB por EPUB (tope de un valor en KV).
 - El texto se manda a OpenRouter en fragmentos de ~900 caracteres; libros muy
   largos generan muchas llamadas, y el costo lo define el modelo que elijas.
 - La voz del navegador (Web Speech) es el respaldo sin conexión o sin API key:

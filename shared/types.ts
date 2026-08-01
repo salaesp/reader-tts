@@ -64,8 +64,8 @@ export interface TtsModel {
 export interface TtsRequest {
   text: string
   /**
-   * sha-256 of `${model}|${voice}|${text}`, used as the R2 cache key. Speed is
-   * deliberately excluded: it is applied through the audio element's
+   * sha-256 of `${model}|${voice}|${text}`, the key of the local audio cache.
+   * Speed is deliberately excluded: it is applied through the audio element's
    * playbackRate, so one rendering serves every speed.
    */
   hash: string

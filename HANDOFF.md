@@ -92,7 +92,7 @@ Ojo con las voces: el nombre depende del modelo. Chirp usa nombres tipo `Kore`,
 ```bash
 npx wrangler d1 create reader-tts          # pegá el database_id en wrangler.toml
 npm run db:remote
-npx wrangler r2 bucket create reader-tts
+npx wrangler kv namespace create FILES     # pegá el id en wrangler.toml
 npx wrangler pages secret put SESSION_SECRET
 npx wrangler pages secret put ENCRYPTION_KEY
 npm run pages:deploy
@@ -100,7 +100,7 @@ npm run pages:deploy
 
 `GOOGLE_CLIENT_ID` va en `[vars]` de `wrangler.toml` (no es secreto: el browser
 lo necesita). Si conectás el repo al panel de Pages, replicá las tres variables
-ahí y asociá los bindings `DB` y `BUCKET`.
+ahí y asociá los bindings `DB` (D1) y `FILES` (KV).
 
 ### OpenRouter
 La key se carga **desde Ajustes dentro de la app**, no en el repo ni en
@@ -129,7 +129,7 @@ functions/            backend (Cloudflare Pages Functions)
   api/auth/session.ts login con Google, sesión, logout
   api/books/          listar, subir, descargar, portada, progreso
   api/settings.ts     preferencias + API key cifrada
-  api/tts/            proxy de síntesis (caché R2) y lista de modelos
+  api/tts/            proxy de síntesis y lista de modelos
   lib/                cripto, sesión, verificación de tokens de Google
 src/
   lib/                epub, segmenter, annotate, player, tts, store, api, router
@@ -175,12 +175,22 @@ Cosas que parecen mejorables pero están así a propósito:
 
 **La API key nunca va al browser.** Se cifra con AES-GCM en D1 y se descifra solo
 dentro del Worker. Si algún día tentás llamar a OpenRouter directo desde el
-cliente, perdés eso, más la caché en R2, más quedás atado al CORS de OpenRouter.
+cliente, perdés eso y quedás atado al CORS de OpenRouter.
 
 **La velocidad no se manda a la API.** Se aplica con `playbackRate` del elemento
 `<audio>`. Así un mismo audio generado sirve para todas las velocidades (el hash
 de caché no incluye la velocidad) y el cambio es instantáneo. Varios modelos
 además rechazan el parámetro `speed`.
+
+**Los archivos van a KV, no a R2.** R2 exige registrar una tarjeta aunque el
+free tier no cobre nada. KV lo evita, a cambio de un tope de 25 MiB por EPUB y
+de no soportar Range requests. Todo el acceso pasa por
+`functions/lib/storage.ts`, así que volver a R2 es reescribir ese archivo solo.
+
+**El audio no se cachea en el servidor.** Se streamea desde OpenRouter y la
+única copia queda en IndexedDB del dispositivo, con el mismo hash. Escuchar el
+mismo pasaje en un segundo dispositivo se cobra de nuevo; era el precio de no
+necesitar R2.
 
 **Renderer de EPUB propio, no `epub.js`.** epub.js dibuja cada capítulo en un
 iframe, lo que hace muy difícil resaltar la oración que se está leyendo y mapear
@@ -207,9 +217,9 @@ la app te mandara al login por un problema de key.
 
 ## 7. Qué está verificado y qué no
 
-Verificado con Chromium contra D1 y R2 locales:
+Verificado con Chromium contra D1 y el almacenamiento local:
 
-- Subida de EPUB, descarga byte-idéntica, portada, borrado (incluye limpiar R2)
+- Subida de EPUB, descarga byte-idéntica, portada, borrado (incluye limpiar los archivos)
 - Apertura del libro, render de capítulos, lista de capítulos, navegación
 - Retomar en la posición guardada
 - Resaltado de la oración correcta y "tocar una oración para leer desde ahí"

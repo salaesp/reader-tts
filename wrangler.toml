@@ -8,16 +8,18 @@ pages_build_output_dir = "dist"
 #   wrangler pages secret put SESSION_SECRET
 #   wrangler pages secret put ENCRYPTION_KEY
 [vars]
-GOOGLE_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = "605196260972-luhckq64ouv44t920lf5cdjs2i0mckfn.apps.googleusercontent.com"
 
 # Create with: wrangler d1 create reader-tts
 # then paste the returned database_id here.
 [[d1_databases]]
 binding = "DB"
 database_name = "reader-tts"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "055f160e-1126-431a-b41d-31c7cb823d4c"
 
-# Create with: wrangler r2 bucket create reader-tts
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "reader-tts"
+# Blob storage for EPUBs and covers. KV rather than R2 because R2 requires a
+# payment method on the account even inside the free tier.
+# Create with: wrangler kv namespace create FILES
+[[kv_namespaces]]
+binding = "FILES"
+id = "bb00390202254bc4ae416998df60cdc0"
