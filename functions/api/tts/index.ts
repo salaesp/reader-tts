@@ -59,9 +59,12 @@ export const onRequestPost: Api = async ({ request, env, data, waitUntil }) => {
   if (!upstream.ok) {
     // Only error responses are JSON; a 200 is raw audio bytes.
     const detail = await upstream.text()
+    // A rejected key must not surface as 401: the client reads that as an
+    // expired session and would bounce the user back to the login screen.
+    const rejectedKey = upstream.status === 401 || upstream.status === 403
     throw new HttpError(
-      upstream.status === 401 || upstream.status === 403 ? 401 : 502,
-      'tts_failed',
+      rejectedKey ? 403 : 502,
+      rejectedKey ? 'invalid_api_key' : 'tts_failed',
       truncate(detail, 500),
     )
   }

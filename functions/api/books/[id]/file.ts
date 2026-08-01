@@ -25,12 +25,16 @@ export const onRequestGet: Api<'id'> = async ({ request, env, data, params }) =>
   const body = 'body' in object ? object.body : null
   if (!body) throw new HttpError(404, 'file_not_found')
 
-  if (object.range && 'offset' in object.range) {
+  // R2 reports a range on full gets too, so the request header decides the
+  // status: answering 206 to a client that never asked for a range is wrong.
+  if (range && object.range && 'offset' in object.range) {
     const offset = object.range.offset ?? 0
     const length = object.range.length ?? object.size - offset
     headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`)
+    headers.set('content-length', String(length))
     return new Response(body, { status: 206, headers })
   }
 
+  headers.set('content-length', String(object.size))
   return new Response(body, { headers })
 }

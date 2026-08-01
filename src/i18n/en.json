@@ -49,6 +49,7 @@
   "reader.sleepEndOfChapter": "End of chapter",
   "reader.buffering": "Generating audio…",
   "reader.needsKey": "Add your OpenRouter API key to use AI voices.",
+  "reader.invalidKey": "OpenRouter rejected your API key. Check it in Settings.",
   "reader.goToSettings": "Go to Settings",
   "reader.usingBrowserVoice": "Using the browser voice.",
   "reader.fellBackToBrowser": "Can't reach OpenRouter: falling back to the browser voice.",
