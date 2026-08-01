@@ -2,22 +2,18 @@ name = "reader-tts"
 compatibility_date = "2026-08-01"
 pages_build_output_dir = "dist"
 
-# `dist/` is generated, and generated files are not committed — so a build that
-# does not run leaves nothing to upload:
+# The build command CANNOT live here. Pages rejects the whole file with
+# "Configuration file for Pages projects does not support build", which fails
+# the deploy earlier and more confusingly than having no build command at all.
+# `wrangler pages dev` does accept and run it locally, so it looks like it
+# should work; it does not.
 #
-#   No build command specified. Skipping build step.
-#   Error: Output directory "dist" not found.
+# It belongs in the dashboard: Settings → Builds & deployments → Build command
+#   npm run build
 #
-# which fails every deploy identically and says nothing about the commit that
-# triggered it.
-#
-# Deploys from a machine run this through `npm run pages:deploy`. This covers
-# the git-connected build, where Cloudflare runs the command itself. It does
-# NOT apply migrations: that needs a CLOUDFLARE_API_TOKEN in the build
-# environment, and a build command that fails without one is worse than a
-# schema step done deliberately. See "Desplegar" in the README.
-[build]
-command = "npm run build"
+# Without it Cloudflare skips the build and stops at `Output directory "dist"
+# not found` — dist/ is generated and not committed, so there is nothing to
+# upload. That failure is identical on every commit and mentions none of them.
 
 # Public, non-secret configuration. The OAuth client id is served to the browser
 # through /api/config, so it does not need to be baked into the bundle.

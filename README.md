@@ -169,12 +169,13 @@ sesión, el problema es el binding `DB` o las migraciones, no el deploy.
 Conectá el repo desde el panel de Pages. Tené en cuenta que **`pages:deploy` no
 se ejecuta**: Cloudflare corre el *build command* y sube `dist/`. Entonces:
 
-- El build command sale del `[build]` del `wrangler.toml` (`npm run build`), así
-  que no hace falta configurarlo en el panel. **Si el panel lo tiene vacío y el
-  `wrangler.toml` tampoco lo define**, Cloudflare saltea el build y falla con
-  `Output directory "dist" not found` — `dist/` es generado y no se commitea,
-  así que sin build no hay nada que subir. Ese error no dice nada del commit:
-  falla igual en todos.
+- **Build command: `npm run build`**, y va sí o sí en el panel — Pages rechaza
+  una sección `[build]` en el `wrangler.toml` («Configuration file for Pages
+  projects does not support build»), aunque `wrangler pages dev` la acepte en
+  local. Si el campo queda vacío, Cloudflare saltea el build y muere en
+  `Output directory "dist" not found`: `dist/` es generado y no se commitea, así
+  que sin build no hay nada que subir. Ese error es idéntico en cada commit y no
+  menciona ninguno.
 - Las migraciones **no** van en el build command salvo que agregues un
   `CLOUDFLARE_API_TOKEN` con permiso **D1: Edit** y `CLOUDFLARE_ACCOUNT_ID` a
   las variables de *build*; sin el token wrangler no se autentica y el build
