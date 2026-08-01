@@ -208,3 +208,85 @@ describe('Player.seekToSentence', () => {
     player.dispose()
   })
 })
+
+/**
+ * Reproduces the mobile case: the element reports no duration until playback
+ * has begun. Waiting for it before playing meant the seek was skipped and the
+ * chunk started from the top — several sentences before the one tapped.
+ */
+function stubAudioWithLateMetadata(): {
+  element: () => HTMLMediaElement | null
+  announceDuration: (seconds: number) => void
+  currentTime: () => number
+} {
+  let currentTime = 0
+  let duration = Number.NaN
+  let element: HTMLMediaElement | null = null
+
+  Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', {
+    configurable: true,
+    get: () => currentTime,
+    set: (value: number) => {
+      currentTime = value
+    },
+  })
+  Object.defineProperty(window.HTMLMediaElement.prototype, 'duration', {
+    configurable: true,
+    get: () => duration,
+  })
+  Object.defineProperty(window.HTMLMediaElement.prototype, 'readyState', {
+    configurable: true,
+    get: () => (Number.isNaN(duration) ? 0 : 1),
+  })
+  Object.defineProperty(window.HTMLMediaElement.prototype, 'paused', {
+    configurable: true,
+    get: () => false,
+  })
+  window.HTMLMediaElement.prototype.pause = vi.fn()
+  window.HTMLMediaElement.prototype.play = vi.fn().mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
+    element = this
+    return Promise.resolve()
+  })
+
+  return {
+    element: () => element,
+    announceDuration(seconds) {
+      duration = seconds
+      element?.dispatchEvent(new Event('loadedmetadata'))
+    },
+    currentTime: () => currentTime,
+  }
+}
+
+describe('Player seeking into a chunk when metadata arrives late', () => {
+  const engine = {
+    provider: 'openrouter' as const,
+    kind: 'cloud' as const,
+    hash: () => Promise.resolve('h'),
+    synthesize: () => Promise.resolve(new Blob([new Uint8Array([1, 2, 3])])),
+  }
+
+  it('applies the jump once the duration is known, not before playing', async () => {
+    const media = stubAudioWithLateMetadata()
+    const { sentences, chunks } = makeChapter()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const player = new Player(engine as any, { bookId: 'b1', lang: 'es', rate: 1 })
+    player.setChunks(chunks, sentences, 0)
+
+    // The last sentence of the chunk, i.e. well past its start.
+    const target = chunks[0].sentenceEnd
+    player.seekToSentence(target)
+    await vi.waitFor(() => expect(media.element()).not.toBeNull())
+
+    // No duration yet, so nothing could have been positioned.
+    expect(media.currentTime()).toBe(0)
+
+    media.announceDuration(30)
+
+    // Now it lands past the top of the chunk rather than starting from it.
+    expect(media.currentTime()).toBeGreaterThan(0)
+    player.dispose()
+  })
+})

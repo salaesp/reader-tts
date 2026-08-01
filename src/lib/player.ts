@@ -95,6 +95,8 @@ export class Player {
   private objectUrl: string | null = null
   /** Sentence to start from once the chunk's audio is ready. */
   private pendingSentence: number | null = null
+  /** Position to jump to, as a fraction of the chunk, once the duration is known. */
+  private pendingSeek: number | null = null
 
   constructor(engine: CloudTtsEngine | null, options: PlayerOptions) {
     this.engine = engine
@@ -106,6 +108,10 @@ export class Player {
     this.audio.addEventListener('ended', this.handleEnded)
     this.audio.addEventListener('error', this.handleAudioError)
     this.audio.addEventListener('timeupdate', this.handleTimeUpdate)
+    // Whichever of these arrives first is when a pending seek can be applied.
+    this.audio.addEventListener('loadedmetadata', this.handleDurationKnown)
+    this.audio.addEventListener('durationchange', this.handleDurationKnown)
+    this.audio.addEventListener('canplay', this.handleDurationKnown)
   }
 
   // --- subscription -------------------------------------------------------
@@ -182,6 +188,10 @@ export class Player {
    */
   private handleTimeUpdate = (): void => {
     if (this.state.status !== 'playing') return
+    // Until the jump lands, position reflects the top of the chunk, not the
+    // sentence the reader asked for — following it would pull the highlight
+    // backwards and then snap it forward.
+    if (this.pendingSeek !== null) return
     const chunk = this.chunks[this.state.chunkIndex]
     if (!chunk) return
 
@@ -305,6 +315,9 @@ export class Player {
     this.audio.removeEventListener('ended', this.handleEnded)
     this.audio.removeEventListener('error', this.handleAudioError)
     this.audio.removeEventListener('timeupdate', this.handleTimeUpdate)
+    this.audio.removeEventListener('loadedmetadata', this.handleDurationKnown)
+    this.audio.removeEventListener('durationchange', this.handleDurationKnown)
+    this.audio.removeEventListener('canplay', this.handleDurationKnown)
     this.audio.src = ''
     this.releaseObjectUrl()
     this.listeners.clear()
@@ -408,6 +421,7 @@ export class Player {
   private async playBlob(blob: Blob, chunk: Chunk): Promise<void> {
     this.releaseObjectUrl()
     this.objectUrl = URL.createObjectURL(blob)
+    this.pendingSeek = null
     this.audio.src = this.objectUrl
     this.audio.playbackRate = this.options.rate
 
@@ -417,29 +431,34 @@ export class Player {
     if (offset > 0) {
       const spans = this.sentenceSpans(chunk)
       const totalChars = spans.length > 0 ? spans[spans.length - 1].end : 0
-      if (totalChars > 0) await this.seekAudioTo(offset / totalChars)
+      if (totalChars > 0) this.pendingSeek = offset / totalChars
     }
 
+    // Seeking cannot be a precondition of playing. Mobile browsers withhold
+    // metadata until playback begins, so waiting for a duration first timed out
+    // and started the chunk from the top — several sentences before the one the
+    // reader tapped. Instead the position is applied the moment the duration
+    // becomes known, which may be after play() has already been called.
+    this.applyPendingSeek()
     await this.audio.play()
+    this.applyPendingSeek()
   }
 
-  /** Positions the audio element once its duration is known. */
-  private seekAudioTo(fraction: number): Promise<void> {
-    return new Promise((resolve) => {
-      const apply = (): void => {
-        if (Number.isFinite(this.audio.duration) && this.audio.duration > 0) {
-          this.audio.currentTime = fraction * this.audio.duration
-        }
-        resolve()
-      }
-      if (this.audio.readyState >= 1) {
-        apply()
-        return
-      }
-      this.audio.addEventListener('loadedmetadata', apply, { once: true })
-      // Never block playback on a metadata event that does not arrive.
-      setTimeout(resolve, 2000)
-    })
+  /**
+   * Positions playback at the pending fraction, if the duration is known yet.
+   * Returns whether the seek is still outstanding.
+   */
+  private applyPendingSeek(): void {
+    if (this.pendingSeek === null) return
+    const { duration } = this.audio
+    if (!Number.isFinite(duration) || duration <= 0) return
+
+    this.audio.currentTime = this.pendingSeek * duration
+    this.pendingSeek = null
+  }
+
+  private handleDurationKnown = (): void => {
+    this.applyPendingSeek()
   }
 
   private async speakWithBrowser(
@@ -529,6 +548,7 @@ export class Player {
   }
 
   private stopPlayback(): void {
+    this.pendingSeek = null
     this.playbackController?.abort()
     this.playbackController = null
     this.browserEngine.stop()
