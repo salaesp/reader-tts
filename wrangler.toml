@@ -36,4 +36,4 @@ migrations_dir = "migrations"
 # Create with: wrangler kv namespace create FILES
 [[kv_namespaces]]
 binding = "FILES"
-id = "PASTE_KV_NAMESPACE_ID"
+id = "bb00390202254bc4ae416998df60cdc0"
