@@ -149,10 +149,19 @@ export function formatPricePerMillion(usdPerToken: number): string {
   return `$${rounded}`
 }
 
-/** A one-line price for a model, or null when nothing is published. */
-export function describePricing(pricing: TtsPricing | null, freeLabel: string): string | null {
-  if (!pricing) return null
-  const { input, output } = pricing
+/**
+ * A one-line price for a model, or null when nothing usable is published.
+ *
+ * Anything that is not recognisably a price returns null rather than a
+ * conclusion. The shape of this field has already changed once, and a client
+ * holding a cached response from before the change read every model as free —
+ * quietly turning "unknown" into a claim about money.
+ */
+export function describePricing(pricing: unknown, freeLabel: string): string | null {
+  if (pricing === null || typeof pricing !== 'object') return null
+
+  const input = asPrice((pricing as TtsPricing).input)
+  const output = asPrice((pricing as TtsPricing).output)
   if (input === null && output === null) return null
   if (!input && !output) return freeLabel
 
@@ -161,6 +170,11 @@ export function describePricing(pricing: TtsPricing | null, freeLabel: string): 
   // Almost always absent; shown only when a provider really does bill it.
   if (output) parts.push(`+${formatPricePerMillion(output)}/M out`)
   return parts.join(' ')
+}
+
+/** A finite number or nothing. A missing price is not a price of zero. */
+function asPrice(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 export interface TtsRequest {

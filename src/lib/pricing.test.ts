@@ -39,3 +39,22 @@ describe('describePricing', () => {
     expect(describePricing({ input: null, output: null }, 'free')).toBeNull()
   })
 })
+
+describe('describePricing with a shape it does not recognise', () => {
+  // The field was a string before it was an object. A client holding a cached
+  // response from then destructured undefined out of it and concluded "free" —
+  // turning missing information into a claim about money.
+  it('says nothing rather than free', () => {
+    expect(describePricing('0.00002' as unknown, 'free')).toBeNull()
+    expect(describePricing('0' as unknown, 'free')).toBeNull()
+    expect(describePricing(0 as unknown, 'free')).toBeNull()
+    expect(describePricing(undefined as unknown, 'free')).toBeNull()
+    expect(describePricing({} as unknown, 'free')).toBeNull()
+    expect(describePricing({ input: 'free' } as unknown, 'free')).toBeNull()
+    expect(describePricing({ input: NaN } as unknown, 'free')).toBeNull()
+  })
+
+  it('still reads a well-formed price', () => {
+    expect(describePricing({ input: 0.000015, output: 0 }, 'free')).toBe('$15/M')
+  })
+})

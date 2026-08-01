@@ -41,8 +41,5 @@ export const onRequestGet: Api = async ({ request, env, data }) => {
     if (voices.length > 0) source = 'inferred'
   }
 
-  return json(
-    { model, provider, voices, source },
-    { headers: { 'cache-control': 'private, max-age=600' } },
-  )
+  return json({ model, provider, voices, source })
 }

@@ -37,5 +37,9 @@ export const onRequestGet: Api = async ({ request, env, data }) => {
   }
 
   const models = await client.listModels(apiKey)
-  return json({ provider, models }, { headers: { 'cache-control': 'private, max-age=600' } })
+  // Deliberately not cached in the browser. The upstream call is already cached
+  // at the edge, so a browser copy saves little — and it cost real confusion
+  // once: a response held from before the pricing field changed shape rendered
+  // every model as free for ten minutes after the fix shipped.
+  return json({ provider, models }, { headers: { 'cache-control': 'private, no-store' } })
 }
