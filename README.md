@@ -169,9 +169,16 @@ sesión, el problema es el binding `DB` o las migraciones, no el deploy.
 Conectá el repo desde el panel de Pages. Tené en cuenta que **`pages:deploy` no
 se ejecuta**: Cloudflare corre el *build command* y sube `dist/`. Entonces:
 
-- Build command: `npm run build && npm run db:remote`
-- Variables de *build*: `CLOUDFLARE_API_TOKEN` con permiso **D1: Edit** y
-  `CLOUDFLARE_ACCOUNT_ID`. Sin eso wrangler no se autentica en el contenedor.
+- El build command sale del `[build]` del `wrangler.toml` (`npm run build`), así
+  que no hace falta configurarlo en el panel. **Si el panel lo tiene vacío y el
+  `wrangler.toml` tampoco lo define**, Cloudflare saltea el build y falla con
+  `Output directory "dist" not found` — `dist/` es generado y no se commitea,
+  así que sin build no hay nada que subir. Ese error no dice nada del commit:
+  falla igual en todos.
+- Las migraciones **no** van en el build command salvo que agregues un
+  `CLOUDFLARE_API_TOKEN` con permiso **D1: Edit** y `CLOUDFLARE_ACCOUNT_ID` a
+  las variables de *build*; sin el token wrangler no se autentica y el build
+  entero falla. Con token: `npm run build && npm run db:remote`.
 - Los bindings del panel (*Settings → Bindings*) son **otro lugar** distinto del
   `wrangler.toml`: hay que cargar `DB` y `FILES` ahí también.
 - Las *preview branches* usan la misma base. Si no querés que una rama migre

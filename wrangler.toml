@@ -2,6 +2,23 @@ name = "reader-tts"
 compatibility_date = "2026-08-01"
 pages_build_output_dir = "dist"
 
+# `dist/` is generated, and generated files are not committed — so a build that
+# does not run leaves nothing to upload:
+#
+#   No build command specified. Skipping build step.
+#   Error: Output directory "dist" not found.
+#
+# which fails every deploy identically and says nothing about the commit that
+# triggered it.
+#
+# Deploys from a machine run this through `npm run pages:deploy`. This covers
+# the git-connected build, where Cloudflare runs the command itself. It does
+# NOT apply migrations: that needs a CLOUDFLARE_API_TOKEN in the build
+# environment, and a build command that fails without one is worse than a
+# schema step done deliberately. See "Desplegar" in the README.
+[build]
+command = "npm run build"
+
 # Public, non-secret configuration. The OAuth client id is served to the browser
 # through /api/config, so it does not need to be baked into the bundle.
 # Secrets (SESSION_SECRET, ENCRYPTION_KEY) are set with:
