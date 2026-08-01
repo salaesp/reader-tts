@@ -55,6 +55,8 @@ export const elevenLabs: TtsProviderClient = {
       audio: await upstream.arrayBuffer(),
       contentType: upstream.headers.get('content-type') ?? 'audio/mpeg',
       generationId: upstream.headers.get('request-id') ?? '',
+      // OUTPUT_FORMAT pins mp3, so there is nothing to discover here.
+      format: 'mp3',
     }
   },
 

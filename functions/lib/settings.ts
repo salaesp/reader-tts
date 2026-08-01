@@ -1,11 +1,13 @@
-import type { Settings, TtsProvider } from '../../shared/types'
+import type { AudioFormat, Settings, TtsProvider } from '../../shared/types'
 import {
+  DEFAULT_AUDIO_FORMAT,
   DEFAULT_ELEVENLABS_MODEL,
   DEFAULT_ELEVENLABS_VOICE,
   DEFAULT_SPEED,
   DEFAULT_TTS_MODEL,
   DEFAULT_TTS_PROVIDER,
   DEFAULT_TTS_VOICE,
+  isAudioFormat,
   isTtsProvider,
 } from '../../shared/types'
 import type { Env } from './env'
@@ -25,6 +27,7 @@ export interface SettingsRow {
   elevenlabs_key_hint: string | null
   elevenlabs_model: string
   elevenlabs_voice: string
+  openrouter_audio_format: string
 }
 
 /** Column names differ per provider; everything else about them is identical. */
@@ -61,6 +64,7 @@ export function defaultSettingsRow(): SettingsRow {
     elevenlabs_key_hint: null,
     elevenlabs_model: DEFAULT_ELEVENLABS_MODEL,
     elevenlabs_voice: DEFAULT_ELEVENLABS_VOICE,
+    openrouter_audio_format: DEFAULT_AUDIO_FORMAT,
   }
 }
 
@@ -69,7 +73,7 @@ export async function loadSettingsRow(env: Env, userId: string): Promise<Setting
     `SELECT openrouter_key_enc, openrouter_key_hint, tts_model, tts_voice,
             speed, ui_lang, reading_lang, use_browser_voice,
             tts_provider, elevenlabs_key_enc, elevenlabs_key_hint,
-            elevenlabs_model, elevenlabs_voice
+            elevenlabs_model, elevenlabs_voice, openrouter_audio_format
        FROM settings WHERE user_id = ?`,
   )
     .bind(userId)
@@ -88,6 +92,17 @@ export function modelOf(row: SettingsRow, provider: TtsProvider): string {
 
 export function voiceOf(row: SettingsRow, provider: TtsProvider): string {
   return (row[COLUMNS[provider].voice] as string) ?? ''
+}
+
+/**
+ * The format the provider accepted last time. Only OpenRouter has anything to
+ * discover: the ElevenLabs client pins mp3.
+ */
+export function audioFormatOf(row: SettingsRow, provider: TtsProvider): AudioFormat {
+  if (provider !== 'openrouter') return 'mp3'
+  return isAudioFormat(row.openrouter_audio_format)
+    ? row.openrouter_audio_format
+    : DEFAULT_AUDIO_FORMAT
 }
 
 function defaultModel(provider: TtsProvider): string {
@@ -126,6 +141,25 @@ export async function getApiKey(
 ): Promise<string | null> {
   const row = await loadSettingsRow(env, userId)
   return getApiKeyFromRow(env, row, provider)
+}
+
+/**
+ * Records the format the provider accepted. Best effort: a failed write only
+ * means the next request probes again, which is not worth failing a synthesis
+ * that already produced audio over.
+ */
+export async function rememberAudioFormat(
+  env: Env,
+  userId: string,
+  format: AudioFormat,
+): Promise<void> {
+  try {
+    await env.DB.prepare('UPDATE settings SET openrouter_audio_format = ? WHERE user_id = ?')
+      .bind(format, userId)
+      .run()
+  } catch (err) {
+    console.warn('could not persist the audio format', err)
+  }
 }
 
 export async function getApiKeyFromRow(

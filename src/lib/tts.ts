@@ -109,9 +109,59 @@ export function voicesFor(
   return names.map((name) => ({ id: name, name }))
 }
 
+/**
+ * Last-resort order when the device says nothing useful about which regional
+ * variant to prefer. It is a tiebreak, not a preference: the chosen voice and
+ * then the device's own locale both come first, because hardcoding es-ES here
+ * meant a reader in Buenos Aires got a Spanish accent while their Latin
+ * American voices sat unused.
+ */
 const VOICE_LOCALES: Record<ReadingLang, string[]> = {
   es: ['es-ES', 'es-MX', 'es-US', 'es-AR', 'es'],
   en: ['en-US', 'en-GB', 'en'],
+}
+
+const normalizeLang = (lang: string): string => lang.replace('_', '-')
+
+/**
+ * Which browser voice to use, remembered per device.
+ *
+ * Not a server-side setting: the voices come from the operating system, so the
+ * list on an Android phone has nothing in common with the one on a laptop and
+ * a synced choice would name a voice that does not exist on the other device.
+ */
+const VOICE_PREF_KEY = 'browser-voice'
+
+export function readVoicePreference(lang: ReadingLang): string | null {
+  try {
+    return localStorage.getItem(`${VOICE_PREF_KEY}:${lang}`)
+  } catch {
+    return null
+  }
+}
+
+export function writeVoicePreference(lang: ReadingLang, voiceUri: string | null): void {
+  try {
+    if (voiceUri) localStorage.setItem(`${VOICE_PREF_KEY}:${lang}`, voiceUri)
+    else localStorage.removeItem(`${VOICE_PREF_KEY}:${lang}`)
+  } catch {
+    // Private mode: the pick just does not survive a reload.
+  }
+}
+
+/** The device's voices for a reading language, best-sounding ones first. */
+export function browserVoicesFor(
+  voices: SpeechSynthesisVoice[],
+  lang: ReadingLang,
+): SpeechSynthesisVoice[] {
+  return voices
+    .filter((voice) => normalizeLang(voice.lang).toLowerCase().startsWith(lang))
+    .sort((a, b) => {
+      // Network voices are markedly better than the built-in ones; on Android
+      // these are the same voices Chrome's own "read aloud" uses.
+      if (a.localService !== b.localService) return a.localService ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
 }
 
 /** Web Speech API voices load asynchronously in most browsers. */
@@ -134,16 +184,38 @@ export function loadBrowserVoices(): Promise<SpeechSynthesisVoice[]> {
   })
 }
 
+/**
+ * Resolves the voice to speak with, in order of how much it is worth trusting:
+ * what the reader picked on this device, then the device's own regional
+ * variant, then the fallback order.
+ */
 export function pickBrowserVoice(
   voices: SpeechSynthesisVoice[],
   lang: ReadingLang,
+  preferredUri: string | null = readVoicePreference(lang),
 ): SpeechSynthesisVoice | null {
+  const candidates = browserVoicesFor(voices, lang)
+  if (candidates.length === 0) return null
+
+  if (preferredUri) {
+    const chosen = candidates.find((voice) => voice.voiceURI === preferredUri)
+    if (chosen) return chosen
+  }
+
+  // "es-AR" on the device should read in Rioplatense, not Peninsular Spanish.
+  const deviceLocale = normalizeLang(navigator.language ?? '')
+  if (deviceLocale.toLowerCase().startsWith(lang)) {
+    const match = candidates.find(
+      (voice) => normalizeLang(voice.lang).toLowerCase() === deviceLocale.toLowerCase(),
+    )
+    if (match) return match
+  }
+
   for (const locale of VOICE_LOCALES[lang]) {
-    const exact = voices.find((voice) => voice.lang.replace('_', '-') === locale)
+    const exact = candidates.find((voice) => normalizeLang(voice.lang) === locale)
     if (exact) return exact
   }
-  const prefix = voices.find((voice) => voice.lang.toLowerCase().startsWith(lang))
-  return prefix ?? null
+  return candidates[0]
 }
 
 export function browserVoiceAvailable(): boolean {

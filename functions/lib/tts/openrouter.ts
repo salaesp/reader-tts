@@ -1,7 +1,8 @@
-import type { TtsModel, TtsVoice } from '../../../shared/types'
+import type { AudioFormat, TtsModel, TtsVoice } from '../../../shared/types'
 import { HttpError } from '../http'
 import type { SynthesisRequest, SynthesisResult, TtsProviderClient } from './types'
 import { truncate } from './types'
+import { parsePcmFormat, pcmToWav } from './wav'
 
 const SPEECH_URL = 'https://openrouter.ai/api/v1/audio/speech'
 
@@ -28,35 +29,27 @@ interface OpenRouterModel {
 }
 
 export const openRouter: TtsProviderClient = {
-  async synthesize({ apiKey, model, voice, text, origin }: SynthesisRequest): Promise<SynthesisResult> {
-    const upstream = await fetch(SPEECH_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-        'http-referer': origin,
-        'x-title': 'Reader TTS',
-      },
-      body: JSON.stringify({ model, input: text, voice, response_format: 'mp3' }),
-    })
+  /**
+   * `response_format` is not a free choice: mp3 is the compact one and most
+   * providers serve it, but the Gemini TTS line only emits PCM and answers a
+   * request for mp3 with a bare "Provider returned 400" — no hint as to which
+   * field was the problem.
+   *
+   * So mp3 is attempted first and a rejection retries as PCM, which is then
+   * wrapped in a WAV container because <audio> cannot play raw samples. The
+   * caller passes the format that worked last time, so the wasted attempt
+   * happens once per model rather than once per chunk.
+   */
+  async synthesize(request: SynthesisRequest): Promise<SynthesisResult> {
+    const preferred = request.format === 'pcm' ? 'pcm' : 'mp3'
 
-    if (!upstream.ok) {
-      // Only error responses are JSON; a 200 is raw audio bytes.
-      const detail = await upstream.text()
-      // A rejected key must not surface as 401: the client reads that as an
-      // expired session and would bounce the user back to the login screen.
-      const rejectedKey = upstream.status === 401 || upstream.status === 403
-      throw new HttpError(
-        rejectedKey ? 403 : 502,
-        rejectedKey ? 'invalid_api_key' : 'tts_failed',
-        truncate(detail),
-      )
-    }
-
-    return {
-      audio: await upstream.arrayBuffer(),
-      contentType: upstream.headers.get('content-type') ?? 'audio/mpeg',
-      generationId: upstream.headers.get('x-generation-id') ?? '',
+    try {
+      return await speak(request, preferred)
+    } catch (err) {
+      const worthRetrying =
+        preferred === 'mp3' && err instanceof HttpError && err.code === 'tts_failed'
+      if (!worthRetrying) throw err
+      return speak(request, 'pcm')
     }
   },
 
@@ -81,6 +74,50 @@ export const openRouter: TtsProviderClient = {
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   },
+}
+
+async function speak(
+  { apiKey, model, voice, text, origin }: SynthesisRequest,
+  responseFormat: AudioFormat,
+): Promise<SynthesisResult> {
+  const upstream = await fetch(SPEECH_URL, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+      'http-referer': origin,
+      'x-title': 'Reader TTS',
+    },
+    body: JSON.stringify({ model, input: text, voice, response_format: responseFormat }),
+  })
+
+  if (!upstream.ok) {
+    // Only error responses are JSON; a 200 is raw audio bytes.
+    const detail = await upstream.text()
+    // A rejected key must not surface as 401: the client reads that as an
+    // expired session and would bounce the user back to the login screen.
+    const rejectedKey = upstream.status === 401 || upstream.status === 403
+    throw new HttpError(
+      rejectedKey ? 403 : 502,
+      rejectedKey ? 'invalid_api_key' : 'tts_failed',
+      truncate(detail),
+    )
+  }
+
+  const body = await upstream.arrayBuffer()
+  const contentType = upstream.headers.get('content-type') ?? ''
+  const generationId = upstream.headers.get('x-generation-id') ?? ''
+
+  if (responseFormat === 'pcm') {
+    return {
+      audio: pcmToWav(body, parsePcmFormat(contentType)),
+      contentType: 'audio/wav',
+      generationId,
+      format: 'pcm',
+    }
+  }
+
+  return { audio: body, contentType: contentType || 'audio/mpeg', generationId, format: 'mp3' }
 }
 
 function producesAudio(model: OpenRouterModel): boolean {

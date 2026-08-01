@@ -12,6 +12,19 @@ export function isTtsProvider(value: unknown): value is TtsProvider {
   return value === 'openrouter' || value === 'elevenlabs'
 }
 
+/**
+ * Audio the provider is asked for. mp3 is roughly a tenth the size, but the
+ * Gemini TTS line only emits pcm and rejects a request for mp3 outright, so it
+ * cannot simply be hardcoded.
+ */
+export type AudioFormat = 'mp3' | 'pcm'
+
+export function isAudioFormat(value: unknown): value is AudioFormat {
+  return value === 'mp3' || value === 'pcm'
+}
+
+export const DEFAULT_AUDIO_FORMAT: AudioFormat = 'mp3'
+
 /** Brand names, identical in every UI language. */
 export const PROVIDER_LABELS: Record<TtsProvider, string> = {
   openrouter: 'OpenRouter',

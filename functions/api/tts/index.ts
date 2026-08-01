@@ -2,7 +2,15 @@ import type { TtsRequest } from '../../../shared/types'
 import { isTtsProvider } from '../../../shared/types'
 import type { Api } from '../../lib/env'
 import { HttpError, json, readJson, requireUser } from '../../lib/http'
-import { getApiKeyFromRow, loadSettingsRow, modelOf, providerOf, voiceOf } from '../../lib/settings'
+import {
+  audioFormatOf,
+  getApiKeyFromRow,
+  loadSettingsRow,
+  modelOf,
+  providerOf,
+  rememberAudioFormat,
+  voiceOf,
+} from '../../lib/settings'
 import { clientFor } from '../../lib/tts'
 
 const MAX_TEXT_LENGTH = 4000
@@ -37,15 +45,23 @@ export const onRequestPost: Api = async ({ request, env, data }) => {
   const apiKey = await getApiKeyFromRow(env, settings, provider)
   if (!apiKey) throw new HttpError(412, 'no_api_key')
 
+  const knownFormat = audioFormatOf(settings, provider)
   const result = await clientFor(provider).synthesize({
     apiKey,
     model,
     voice,
     text,
     origin: new URL(request.url).origin,
+    format: knownFormat,
   })
 
   if (result.audio.byteLength === 0) throw new HttpError(502, 'tts_empty_response')
+
+  // Discovering that this model needs pcm costs a rejected mp3 attempt; write
+  // it down so the next chunk — and the two being prefetched — skip the probe.
+  if (provider === 'openrouter' && result.format !== knownFormat) {
+    await rememberAudioFormat(env, user.id, result.format)
+  }
 
   return new Response(result.audio, {
     headers: {

@@ -1,4 +1,4 @@
-import type { TtsModel } from '../../../shared/types'
+import type { AudioFormat, TtsModel } from '../../../shared/types'
 
 export interface SynthesisRequest {
   apiKey: string
@@ -7,6 +7,8 @@ export interface SynthesisRequest {
   text: string
   /** Sent to OpenRouter as the attribution referer; unused by ElevenLabs. */
   origin: string
+  /** Format known to work for this model, so the probe is not repeated. */
+  format?: AudioFormat
 }
 
 export interface SynthesisResult {
@@ -14,6 +16,8 @@ export interface SynthesisResult {
   contentType: string
   /** Upstream request id, when the provider returns one. Useful for support. */
   generationId: string
+  /** What the provider actually accepted, to be remembered for next time. */
+  format: AudioFormat
 }
 
 export interface TtsProviderClient {

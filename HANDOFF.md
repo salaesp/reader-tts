@@ -36,7 +36,7 @@ terminal y `npm run dev` en otra: Vite levanta en `:5173` y hace proxy de `/api`
 al Worker.
 
 ```bash
-npm test          # 92 tests
+npm test          # 105 tests
 npm run build     # typecheck + build
 ```
 
@@ -226,6 +226,22 @@ contra una base sin migrar no. Wrangler lleva la cuenta en `d1_migrations`, así
 que aplicar dos veces no hace nada. Los archivos ya aplicados no se editan: se
 agrega uno nuevo.
 
+**`response_format` no se puede fijar.** mp3 pesa una décima parte, pero la
+línea Gemini TTS solo emite PCM y contesta «Provider returned 400» a un pedido
+de mp3, sin decir qué campo estuvo mal. Por eso se prueba mp3, se reintenta en
+PCM y el PCM se envuelve en WAV — `<audio>` no reproduce samples crudos. El
+formato que anduvo se guarda en `settings.openrouter_audio_format` y se resetea
+al cambiar de modelo: con dos fragmentos en prefetch, no guardarlo significa
+tres round trips desperdiciados a la vez.
+
+**La voz del navegador se elige por dispositivo, no por cuenta.** Las voces las
+da el sistema operativo, así que la lista de un Android no se parece a la de una
+laptop y una preferencia sincronizada nombraría una voz inexistente. Va en
+`localStorage`. El orden de `VOICE_LOCALES` es solo un desempate: primero manda
+lo que eligió el usuario y después el locale del dispositivo, porque tener
+`es-ES` hardcodeado hacía que alguien en Buenos Aires escuchara acento español
+teniendo voces latinas instaladas.
+
 **Los archivos van a KV, no a R2.** R2 exige registrar una tarjeta aunque el
 free tier no cobre nada. KV lo evita, a cambio de un tope de 25 MiB por EPUB y
 de no soportar Range requests. Todo el acceso pasa por
@@ -271,7 +287,7 @@ Verificado con Chromium contra D1 y el almacenamiento local:
 - Cifrado de la key (verificado que en la base hay ciphertext)
 - i18n es/en, manifest válido, service worker activo
 - Modo offline: biblioteca y libro descargado siguen funcionando
-- 92 tests unitarios
+- 105 tests unitarios
 
 **No verificado:**
 

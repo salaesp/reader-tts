@@ -8,9 +8,11 @@ import { useSession } from '../lib/session'
 import { store } from '../lib/store'
 import {
   browserVoiceAvailable,
+  browserVoicesFor,
   loadBrowserVoices,
   pickBrowserVoice,
   voicesFor,
+  writeVoicePreference,
 } from '../lib/tts'
 import { Banner, Button, Card, Field, Select, Spinner, TextInput } from '../components/ui'
 
@@ -32,6 +34,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [usage, setUsage] = useState<number | null>(null)
+  const [deviceVoices, setDeviceVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [deviceVoice, setDeviceVoice] = useState<string | null>(null)
   const testAudio = useRef<HTMLAudioElement | null>(null)
 
   // The catalogue is per provider, and for ElevenLabs it also depends on the
@@ -72,6 +76,26 @@ export default function Settings() {
   useEffect(() => {
     void store.estimateUsage().then(setUsage)
   }, [])
+
+  // The device's own voices, which have nothing to do with the cloud providers:
+  // they come from the operating system and differ on every machine.
+  useEffect(() => {
+    if (!browserVoiceAvailable()) return
+    let cancelled = false
+
+    void loadBrowserVoices().then((all) => {
+      if (cancelled) return
+      const forLang = browserVoicesFor(all, settings.readingLang)
+      setDeviceVoices(forLang)
+      // Show which one would actually speak, rather than an empty select that
+      // suggests nothing is configured.
+      setDeviceVoice(pickBrowserVoice(all, settings.readingLang)?.voiceURI ?? null)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [settings.readingLang])
 
   useEffect(() => () => testAudio.current?.pause(), [])
 
@@ -328,18 +352,49 @@ export default function Settings() {
         </Field>
 
         {browserVoiceAvailable() && (
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={settings.useBrowserVoice}
-              onChange={(event) => void save({ useBrowserVoice: event.target.checked })}
-              className="mt-0.5 size-4 accent-sky-500"
-            />
-            <span>
-              <span className="block text-sm text-slate-200">{t('settings.browserVoice')}</span>
-              <span className="block text-xs text-slate-400">{t('settings.browserVoiceHelp')}</span>
-            </span>
-          </label>
+          <>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={settings.useBrowserVoice}
+                onChange={(event) => void save({ useBrowserVoice: event.target.checked })}
+                className="mt-0.5 size-4 accent-sky-500"
+              />
+              <span>
+                <span className="block text-sm text-slate-200">{t('settings.browserVoice')}</span>
+                <span className="block text-xs text-slate-400">{t('settings.browserVoiceHelp')}</span>
+              </span>
+            </label>
+
+            {settings.useBrowserVoice && (
+              <Field
+                label={t('settings.deviceVoice')}
+                hint={
+                  deviceVoices.length > 0
+                    ? t('settings.deviceVoiceHelp')
+                    : t('settings.deviceVoiceNone')
+                }
+              >
+                <Select
+                  value={deviceVoice ?? ''}
+                  disabled={deviceVoices.length === 0}
+                  onChange={(event) => {
+                    const uri = event.target.value
+                    setDeviceVoice(uri)
+                    writeVoicePreference(settings.readingLang, uri)
+                    setStatus({ tone: 'success', message: t('settings.saved') })
+                  }}
+                >
+                  {deviceVoices.map((voice) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name} · {voice.lang}
+                      {voice.localService ? '' : ` · ${t('settings.deviceVoiceOnline')}`}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+          </>
         )}
       </Card>
 

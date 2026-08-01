@@ -1,5 +1,5 @@
 import type { SettingsUpdate, TtsProvider } from '../../shared/types'
-import { isTtsProvider } from '../../shared/types'
+import { DEFAULT_AUDIO_FORMAT, isTtsProvider } from '../../shared/types'
 import type { Api } from '../lib/env'
 import { HttpError, json, readJson, requireUser } from '../lib/http'
 import { encryptSecret } from '../lib/crypto'
@@ -46,6 +46,11 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
   } else {
     next.tts_model = sanitizeString(body.ttsModel, current.tts_model, 128)
     next.tts_voice = sanitizeString(body.ttsVoice, current.tts_voice, 64)
+    // Which formats a model accepts is a property of that model, so the
+    // remembered value stops meaning anything the moment it changes. Back to
+    // mp3, or a move away from a pcm-only model would keep paying for
+    // uncompressed audio forever.
+    if (next.tts_model !== current.tts_model) next.openrouter_audio_format = DEFAULT_AUDIO_FORMAT
   }
 
   if (body.apiKey === null) {
@@ -60,8 +65,9 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
     `INSERT INTO settings (user_id, openrouter_key_enc, openrouter_key_hint, tts_model,
                            tts_voice, speed, ui_lang, reading_lang, use_browser_voice,
                            tts_provider, elevenlabs_key_enc, elevenlabs_key_hint,
-                           elevenlabs_model, elevenlabs_voice, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           elevenlabs_model, elevenlabs_voice,
+                           openrouter_audio_format, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
        openrouter_key_enc = excluded.openrouter_key_enc,
        openrouter_key_hint = excluded.openrouter_key_hint,
@@ -76,6 +82,7 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
        elevenlabs_key_hint = excluded.elevenlabs_key_hint,
        elevenlabs_model = excluded.elevenlabs_model,
        elevenlabs_voice = excluded.elevenlabs_voice,
+       openrouter_audio_format = excluded.openrouter_audio_format,
        updated_at = excluded.updated_at`,
   )
     .bind(
@@ -93,6 +100,7 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
       next.elevenlabs_key_hint,
       next.elevenlabs_model,
       next.elevenlabs_voice,
+      next.openrouter_audio_format,
       Date.now(),
     )
     .run()

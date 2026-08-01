@@ -260,5 +260,14 @@ migrations/           esquema versionado; se aplica solo en cada deploy
 - ElevenLabs sale en `mp3_44100_128`, el único formato disponible en todos los
   planes.
 - La voz del navegador (Web Speech) es el respaldo sin conexión o sin API key:
-  no requiere cuenta pero suena bastante peor.
+  no requiere cuenta pero suena bastante peor. Se puede elegir cuál usar en
+  Ajustes; las voces son las del sistema operativo, así que la lista cambia en
+  cada dispositivo y la elección se guarda **local**, no en la cuenta. En
+  Android las voces «en línea» de Google son las mismas que usa el «leer en voz
+  alta» de Chrome.
+- Algunos modelos de OpenRouter (la línea Gemini TTS) solo emiten PCM y
+  rechazan un pedido de mp3 con un escueto «Provider returned 400». La síntesis
+  prueba mp3 primero, reintenta en PCM y lo envuelve en WAV para que el
+  navegador pueda reproducirlo; el formato que funcionó queda guardado para no
+  repetir el intento fallido en cada fragmento.
 - Solo se soporta EPUB. PDF y MOBI quedan fuera.
