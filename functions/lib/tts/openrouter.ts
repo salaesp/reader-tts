@@ -41,6 +41,12 @@ export const openRouter: TtsProviderClient = {
    * happens once per model rather than once per chunk.
    */
   async synthesize(request: SynthesisRequest): Promise<SynthesisResult> {
+    // The speech endpoint requires a voice, and voices are namespaced per
+    // provider. An empty one means the model changed and no voice has been
+    // chosen for it yet — worth saying, rather than spending a call to be told
+    // "Provider returned 400".
+    if (!request.voice) throw new HttpError(400, 'no_voice_selected')
+
     const preferred = request.format === 'pcm' ? 'pcm' : 'mp3'
 
     try {

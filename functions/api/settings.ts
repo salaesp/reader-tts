@@ -45,12 +45,21 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
     next.elevenlabs_voice = sanitizeString(body.ttsVoice, current.elevenlabs_voice, 128, true)
   } else {
     next.tts_model = sanitizeString(body.ttsModel, current.tts_model, 128)
-    next.tts_voice = sanitizeString(body.ttsVoice, current.tts_voice, 64)
-    // Which formats a model accepts is a property of that model, so the
-    // remembered value stops meaning anything the moment it changes. Back to
-    // mp3, or a move away from a pcm-only model would keep paying for
-    // uncompressed audio forever.
-    if (next.tts_model !== current.tts_model) next.openrouter_audio_format = DEFAULT_AUDIO_FORMAT
+    next.tts_voice = sanitizeString(body.ttsVoice, current.tts_voice, 64, true)
+
+    // Both of these describe the model, not the account, so they stop meaning
+    // anything the moment the model changes.
+    if (next.tts_model !== current.tts_model) {
+      // Voices are namespaced per provider: `Kore` is Google's and `alloy` is
+      // OpenAI's, and sending either to Voxtral is a 400. Carrying the old one
+      // over made every model switch fail until the voice was changed by hand,
+      // with nothing saying so. Cleared, Settings fills it from the new
+      // model's own list.
+      if (!ttsVoiceExplicit(body)) next.tts_voice = ''
+      // Otherwise a move away from a pcm-only model keeps paying for
+      // uncompressed audio forever.
+      next.openrouter_audio_format = DEFAULT_AUDIO_FORMAT
+    }
   }
 
   if (body.apiKey === null) {
@@ -106,6 +115,14 @@ export const onRequestPut: Api = async ({ request, env, data }) => {
     .run()
 
   return json({ settings: toSettings(next) })
+}
+
+/**
+ * Whether the caller named a voice in this same request. Changing model and
+ * voice together is a deliberate pair and must not be undone by the reset.
+ */
+function ttsVoiceExplicit(body: SettingsUpdate): boolean {
+  return typeof body.ttsVoice === 'string' && body.ttsVoice.trim().length > 0
 }
 
 function setKey(

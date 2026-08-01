@@ -99,3 +99,16 @@ describe('openRouter.synthesize', () => {
     expect((err as HttpError).code).toBe('invalid_api_key')
   })
 })
+
+describe('openRouter.synthesize without a voice', () => {
+  it('says so instead of spending a call to be told "Provider returned 400"', async () => {
+    const fetchMock = mockFetch(audio('audio/mpeg'))
+
+    const err = await openRouter.synthesize({ ...BASE, voice: '' }).catch((e: unknown) => e)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(err).toBeInstanceOf(HttpError)
+    expect((err as HttpError).status).toBe(400)
+    expect((err as HttpError).code).toBe('no_voice_selected')
+  })
+})
