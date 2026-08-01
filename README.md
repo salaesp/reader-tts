@@ -70,13 +70,15 @@ saca a la PWA instalada del modo standalone en Android/iOS.
 
 ### 2. Cloudflare — proyecto, base y almacenamiento
 
-Los ids de D1 y KV son **propios de tu cuenta**: no pueden venir en el repo, y
-Cloudflare valida los bindings al recibir el deploy, así que un id que no existe
-rechaza *todos* los deploys por igual — el código que estés subiendo no
-interviene. Por eso `wrangler.toml` trae `PASTE_D1_DATABASE_ID` y
-`PASTE_KV_NAMESPACE_ID` en lugar de valores con pinta de reales, y todo comando
-que los use (`pages:deploy`, `db:remote`, `db:status`) se niega a correr
-mientras sigan ahí, diciéndote cuál falta.
+Los ids de D1 y KV valen para **una sola cuenta de Cloudflare**. Los que trae el
+repo son los de la cuenta original: si desplegás en otra, o si borraste los
+recursos, hay que crearlos de nuevo y pegar los valores nuevos.
+
+Cloudflare valida los bindings al recibir el deploy, así que un id que no está
+en la cuenta rechaza *todos* los deploys por igual — el código que estés
+subiendo no interviene. Por eso todo comando que los use (`pages:deploy`,
+`db:remote`, `db:status`) chequea primero que no sean placeholders y te dice
+cuál falta, en vez de dejar que la API conteste «Invalid uuid».
 
 Seguí los pasos en este orden; cada uno tiene con qué comprobarlo.
 

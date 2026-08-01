@@ -117,14 +117,15 @@ npm run pages:deploy
 `GOOGLE_CLIENT_ID` va en `[vars]` de `wrangler.toml` (no es secreto: el browser
 lo necesita).
 
-**Los ids de D1 y KV son de tu cuenta y no pueden venir en el repo.** Cloudflare
-valida los bindings al recibir el deploy, así que un id inexistente rechaza
-todos los deploys por igual, sin importar qué cambió en el código — un modo de
-falla que desde el log parece «el deploy está roto» y no «esta línea está mal».
-Por eso los valores en `wrangler.toml` son `PASTE_…` y todo comando que toque
+**Los ids de D1 y KV valen para una sola cuenta de Cloudflare.** El del repo es
+el de la cuenta original; en una cuenta nueva hay que crear los recursos y
+pegar los valores nuevos. Cloudflare valida los bindings al recibir el deploy,
+así que un id que no está en la cuenta rechaza todos los deploys por igual, sin
+importar qué cambió en el código — un modo de falla que desde el log parece «el
+deploy está roto» y no «esta línea está mal». Por eso todo comando que toque
 esos recursos (`pages:deploy`, `db:remote`, `db:status`) corre antes
-`scripts/check-bindings.mjs`, que corta nombrando el comando que falta. Cada uno
-chequea solo lo que usa: aplicar migraciones no exige un KV que no toca.
+`scripts/check-bindings.mjs`. Cada uno chequea solo lo que usa: aplicar
+migraciones no exige un KV que no toca.
 
 ### OpenRouter / ElevenLabs
 Las keys se cargan **desde Ajustes dentro de la app**, no en el repo ni en

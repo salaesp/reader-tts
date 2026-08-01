@@ -10,14 +10,17 @@ pages_build_output_dir = "dist"
 [vars]
 GOOGLE_CLIENT_ID = "605196260972-luhckq64ouv44t920lf5cdjs2i0mckfn.apps.googleusercontent.com"
 
-# Create with: wrangler d1 create reader-tts, then paste the returned
-# database_id below — it is specific to your Cloudflare account.
+# The id belongs to one Cloudflare account. On a fresh account, create the
+# database and paste the new value:
 #
-# Cloudflare validates bindings at deploy time, so an id that does not exist in
-# the account fails EVERY deploy, no matter what changed in the code. The
-# placeholder is deliberately not a well-formed id: `npm run pages:deploy`
-# checks for it and stops with an explanation instead of letting the API
-# answer with something cryptic.
+#   npx wrangler d1 create reader-tts
+#   npx wrangler d1 list              # confirms the id matches what is here
+#
+# Cloudflare validates bindings when it receives a deploy, so an id absent from
+# the account rejects every deploy identically, whatever the code says. The
+# commands that reach D1 check this value first (scripts/check-bindings.mjs) so
+# that failure arrives as the step that was missed rather than as
+# "Invalid uuid".
 #
 # Schema changes are numbered files under migrations/. Wrangler records which
 # ones ran in a d1_migrations table, so applying is idempotent and
@@ -25,7 +28,7 @@ GOOGLE_CLIENT_ID = "605196260972-luhckq64ouv44t920lf5cdjs2i0mckfn.apps.googleuse
 [[d1_databases]]
 binding = "DB"
 database_name = "reader-tts"
-database_id = "PASTE_D1_DATABASE_ID"
+database_id = "055f160e-1126-431a-b41d-31c7cb823d4c"
 migrations_dir = "migrations"
 
 # Blob storage for EPUBs and covers. KV rather than R2 because R2 requires a
