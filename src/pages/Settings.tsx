@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReadingLang, TtsModel, UiLang } from '../../shared/types'
-import { CHIRP3_VOICES } from '../../shared/types'
+import { GOOGLE_VOICES, OPENAI_VOICES } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
 import { chunkHash } from '../lib/segmenter'
@@ -96,12 +96,9 @@ export default function Settings() {
   }
 
   const selectedModel = models.find((model) => model.id === settings.ttsModel)
-  const voiceOptions =
-    selectedModel?.voices.length
-      ? selectedModel.voices
-      : settings.ttsModel.startsWith('google/')
-        ? CHIRP3_VOICES
-        : []
+  const voiceOptions = selectedModel?.voices.length
+    ? selectedModel.voices
+    : voiceFallback(settings.ttsModel)
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-24 pt-4">
@@ -344,4 +341,15 @@ function formatBytes(bytes: number): string {
     unit++
   }
   return `${value.toFixed(1)} ${units[unit]}`
+}
+
+/**
+ * Voice names are per-provider and OpenRouter does not publish them, so the
+ * list is inferred from the model id. An unknown provider falls back to a free
+ * text field rather than to a wrong list.
+ */
+function voiceFallback(modelId: string): string[] {
+  if (modelId.startsWith('openai/')) return OPENAI_VOICES
+  if (modelId.startsWith('google/')) return GOOGLE_VOICES
+  return []
 }

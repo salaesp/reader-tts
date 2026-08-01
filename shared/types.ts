@@ -80,15 +80,36 @@ export interface ApiError {
   detail?: string
 }
 
-export const DEFAULT_TTS_MODEL = 'google/chirp-3'
+/**
+ * `google/chirp-3` does not exist on OpenRouter — the speech endpoint rejects
+ * it. The real catalogue is whatever `/models?output_modalities=speech`
+ * returns; this is the Google entry in it, and its voice names carry over from
+ * the Chirp line.
+ */
+export const DEFAULT_TTS_MODEL = 'google/gemini-3.1-flash-tts-preview'
 export const DEFAULT_TTS_VOICE = 'Kore'
 export const DEFAULT_SPEED = 1
 
 /**
- * Voices published for Google's Chirp 3 HD line. Used as the fallback list when
- * OpenRouter's model metadata does not advertise voices for the selected model.
+ * Fallback voice lists, used when OpenRouter's model metadata does not
+ * advertise voices for the selected model — which today is every model.
  */
-export const CHIRP3_VOICES = [
+export const OPENAI_VOICES = [
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'fable',
+  'nova',
+  'onyx',
+  'sage',
+  'shimmer',
+  'verse',
+]
+
+/** Google's voice names, shared by the Chirp 3 HD and Gemini TTS lines. */
+export const GOOGLE_VOICES = [
   'Aoede',
   'Charon',
   'Fenrir',

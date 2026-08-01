@@ -3,7 +3,13 @@ import type { Api } from '../../lib/env'
 import { HttpError, json, requireUser } from '../../lib/http'
 import { getApiKey } from '../../lib/settings'
 
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
+/**
+ * The unfiltered model list does not include TTS models at all: asking for
+ * `output_modalities=speech` is the only way they show up. Without it the
+ * Settings selector offered chat and music models, every one of which the
+ * speech endpoint rejects with "Model does not exist".
+ */
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=speech'
 
 interface OpenRouterModel {
   id: string
