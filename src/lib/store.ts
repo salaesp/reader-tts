@@ -102,6 +102,14 @@ export const store = {
     }, undefined)
   },
 
+  /**
+   * Caches one book without disturbing the rest. `saveBooks` clears the store
+   * first, which is right for a library listing and wrong for a single book.
+   */
+  async saveBook(book: Book): Promise<void> {
+    await safe(() => run(STORE_BOOKS, 'readwrite', (s) => s.put(book)), undefined)
+  },
+
   listBooks: () => safe(() => run<Book[]>(STORE_BOOKS, 'readonly', (s) => s.getAll()), []),
 
   getBook: (id: string) =>

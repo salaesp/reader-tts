@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { Book } from '../../shared/types'
-import { PROVIDER_LABELS } from '../../shared/types'
+import { PROVIDER_LABELS, estimateUsd, formatUsd } from '../../shared/types'
 import { useI18n } from '../i18n'
 import { ApiError, api } from '../lib/api'
 import { buildTextIndex, highlightSentences, wrapSentences } from '../lib/annotate'
@@ -17,9 +17,11 @@ import { buildChunks, splitSentences } from '../lib/segmenter'
 import { useSession } from '../lib/session'
 import type { ChapterWork } from '../lib/estimate'
 import { chapterWork } from '../lib/estimate'
+import { usePricing } from '../lib/modelPricing'
 import { store } from '../lib/store'
 import { CloudTtsEngine, browserVoiceAvailable } from '../lib/tts'
 import { ChapterCost } from '../components/ChapterCost'
+import { ChapterDownload } from '../components/ChapterDownload'
 import { ChapterList } from '../components/ChapterList'
 import { PlayerBar } from '../components/PlayerBar'
 import { Banner, Button, Spinner } from '../components/ui'
@@ -40,6 +42,7 @@ export default function Reader({ bookId }: { bookId: string }) {
   const [chapters, setChapters] = useState<EpubChapter[]>([])
   const [chapter, setChapter] = useState<ChapterState | null>(null)
   const [work, setWork] = useState<ChapterWork | null>(null)
+  const [refreshWork, setRefreshWork] = useState(0)
   const [failedToLoad, setFailedToLoad] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showChapters, setShowChapters] = useState(false)
@@ -76,6 +79,15 @@ export default function Reader({ bookId }: { bookId: string }) {
     [settings.useBrowserVoice, settings.ttsProvider, provider.model, provider.voice],
   )
 
+  const pricing = usePricing(settings.ttsProvider, provider.model, !settings.useBrowserVoice)
+
+  // The download button names the price before spending it.
+  const downloadCost =
+    work && work.pendingChars > 0
+      ? (estimateUsd(work.pendingChars, settings.readingLang, pricing)?.usd ?? null)
+      : null
+  const downloadCostLabel = downloadCost === null ? null : `≈ ${formatUsd(downloadCost)}`
+
   // --- load the book ------------------------------------------------------
 
   useEffect(() => {
@@ -95,6 +107,10 @@ export default function Reader({ bookId }: { bookId: string }) {
           const { book: fetched } = await api.getBook(bookId)
           meta = fetched
           remoteProgress = fetched.progress
+          // Opening this book offline later needs its metadata, and reaching
+          // the reader does not imply the library was visited first — a
+          // bookmark, or the PWA restoring its last route, comes straight here.
+          void store.saveBook(fetched)
         } catch (err) {
           if (err instanceof ApiError && err.isUnauthorized) throw err
           meta = (await store.getBook(bookId)) ?? null
@@ -194,7 +210,7 @@ export default function Reader({ bookId }: { bookId: string }) {
     return () => {
       cancelled = true
     }
-  }, [chapter, engine, bookId, playerState.chunkIndex])
+  }, [chapter, engine, bookId, playerState.chunkIndex, refreshWork])
 
   // --- player wiring ------------------------------------------------------
 
@@ -498,16 +514,27 @@ export default function Reader({ bookId }: { bookId: string }) {
         </label>
       </div>
 
-      <p className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-slate-500">
-        <span>{t('reader.tapToStart')}</span>
-        <ChapterCost
-          work={work}
-          provider={settings.ttsProvider}
-          model={provider.model}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-slate-500">
+          <span>{t('reader.tapToStart')}</span>
+          <ChapterCost
+            work={work}
+            pricing={pricing}
+            lang={settings.readingLang}
+            browserVoice={settings.useBrowserVoice}
+          />
+        </p>
+
+        <ChapterDownload
+          engine={engine}
+          chunks={chapter?.chunks ?? []}
+          bookId={bookId}
           lang={settings.readingLang}
-          browserVoice={settings.useBrowserVoice}
+          work={work}
+          costLabel={downloadCostLabel}
+          onFinished={() => setRefreshWork((n) => n + 1)}
         />
-      </p>
+      </div>
 
       {/* Content is sanitized in openEpub before it reaches this point. */}
       <div

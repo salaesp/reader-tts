@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
-import type { ReadingLang, TtsPricing, TtsProvider } from '../../shared/types'
+import type { ReadingLang, TtsPricing } from '../../shared/types'
 import { estimateUsd, formatUsd } from '../../shared/types'
 import { useI18n } from '../i18n'
 import type { ChapterWork } from '../lib/estimate'
-import { pricingFor } from '../lib/modelPricing'
 
 /**
  * What the rest of this chapter will cost.
@@ -16,30 +14,17 @@ import { pricingFor } from '../lib/modelPricing'
  */
 export function ChapterCost({
   work,
-  provider,
-  model,
+  pricing,
   lang,
   browserVoice,
 }: {
   work: ChapterWork | null
-  provider: TtsProvider
-  model: string
+  /** Fetched once by the Reader and shared with the download button. */
+  pricing: TtsPricing | null
   lang: ReadingLang
   browserVoice: boolean
 }) {
   const { t } = useI18n()
-  const [pricing, setPricing] = useState<TtsPricing | null>(null)
-
-  useEffect(() => {
-    if (browserVoice || !model) return
-    let cancelled = false
-    void pricingFor(provider, model).then((found) => {
-      if (!cancelled) setPricing(found)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [provider, model, browserVoice])
 
   // The browser voice is free, and the reader banner already says so.
   if (browserVoice || !work || work.totalChunks === 0) return null

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { TtsPricing, TtsProvider } from '../../shared/types'
 import { api } from './api'
 
@@ -50,6 +51,35 @@ export async function pricingFor(
 ): Promise<TtsPricing | null> {
   const catalogue = loaded.get(provider) ?? (await fetchCatalogue(provider))
   return catalogue.get(model) ?? null
+}
+
+/**
+ * The price of the selected model, refetched when the selection changes.
+ * Shared by everything that needs to talk about cost, so the catalogue is
+ * requested once rather than once per component.
+ */
+export function usePricing(
+  provider: TtsProvider,
+  model: string,
+  enabled = true,
+): TtsPricing | null {
+  const [pricing, setPricing] = useState<TtsPricing | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !model) {
+      setPricing(null)
+      return
+    }
+    let cancelled = false
+    void pricingFor(provider, model).then((found) => {
+      if (!cancelled) setPricing(found)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [provider, model, enabled])
+
+  return pricing
 }
 
 /** Drops the memo, so a saved API key takes effect without a reload. */

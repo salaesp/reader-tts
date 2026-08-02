@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Book } from '../../shared/types'
 import { useI18n } from '../i18n'
-import { IconButton } from './ui'
+import { IconButton, ProgressBar } from './ui'
 
 export function BookCard({
   book,
@@ -40,12 +40,7 @@ export function BookCard({
                 {started ? t('library.continue') : t('library.start')}
               </span>
             </span>
-            <span className="block h-1 overflow-hidden rounded-full bg-slate-800">
-              <span
-                className="block h-full rounded-full bg-sky-500 transition-[width]"
-                style={{ width: `${percent}%` }}
-              />
-            </span>
+            <ProgressBar percent={percent} />
           </span>
         </span>
       </button>

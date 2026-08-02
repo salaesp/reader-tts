@@ -67,6 +67,38 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   )
 }
 
+/**
+ * A determinate progress bar. Purely presentational: the reading position bar
+ * in PlayerBar is a scrubber and stays where it is.
+ */
+export function ProgressBar({
+  percent,
+  label,
+  className = '',
+}: {
+  percent: number
+  /** Describes what is progressing, for assistive technology. */
+  label?: string
+  className?: string
+}) {
+  const clamped = Math.min(100, Math.max(0, percent))
+  return (
+    <span
+      role="progressbar"
+      aria-valuenow={Math.round(clamped)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label}
+      className={`block h-1 overflow-hidden rounded-full bg-slate-800 ${className}`}
+    >
+      <span
+        className="block h-full rounded-full bg-sky-500 transition-[width]"
+        style={{ width: `${clamped}%` }}
+      />
+    </span>
+  )
+}
+
 export function Field({
   label,
   hint,
