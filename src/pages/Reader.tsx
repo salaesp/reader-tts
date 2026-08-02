@@ -15,8 +15,11 @@ import { useRouter } from '../lib/router'
 import type { Chunk, Sentence } from '../lib/segmenter'
 import { buildChunks, splitSentences } from '../lib/segmenter'
 import { useSession } from '../lib/session'
+import type { ChapterWork } from '../lib/estimate'
+import { chapterWork } from '../lib/estimate'
 import { store } from '../lib/store'
 import { CloudTtsEngine, browserVoiceAvailable } from '../lib/tts'
+import { ChapterCost } from '../components/ChapterCost'
 import { ChapterList } from '../components/ChapterList'
 import { PlayerBar } from '../components/PlayerBar'
 import { Banner, Button, Spinner } from '../components/ui'
@@ -36,6 +39,7 @@ export default function Reader({ bookId }: { bookId: string }) {
   const [book, setBook] = useState<Book | null>(null)
   const [chapters, setChapters] = useState<EpubChapter[]>([])
   const [chapter, setChapter] = useState<ChapterState | null>(null)
+  const [work, setWork] = useState<ChapterWork | null>(null)
   const [failedToLoad, setFailedToLoad] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showChapters, setShowChapters] = useState(false)
@@ -167,6 +171,30 @@ export default function Reader({ bookId }: { bookId: string }) {
     },
     [settings.readingLang],
   )
+
+  // --- what the rest of this chapter would cost ----------------------------
+
+  // Recomputed as playback advances, so the count of already-rendered chunks —
+  // and therefore the estimate — falls while listening instead of going stale.
+  useEffect(() => {
+    if (!chapter || !engine) {
+      setWork(null)
+      return
+    }
+    let cancelled = false
+
+    void (async () => {
+      const [hashes, cached] = await Promise.all([
+        Promise.all(chapter.chunks.map((chunk) => engine.hash(chunk.text))),
+        store.cachedHashes(bookId),
+      ])
+      if (!cancelled) setWork(chapterWork(chapter.chunks, hashes, cached))
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [chapter, engine, bookId, playerState.chunkIndex])
 
   // --- player wiring ------------------------------------------------------
 
@@ -470,7 +498,16 @@ export default function Reader({ bookId }: { bookId: string }) {
         </label>
       </div>
 
-      <p className="mb-4 text-xs text-slate-500">{t('reader.tapToStart')}</p>
+      <p className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-slate-500">
+        <span>{t('reader.tapToStart')}</span>
+        <ChapterCost
+          work={work}
+          provider={settings.ttsProvider}
+          model={provider.model}
+          lang={settings.readingLang}
+          browserVoice={settings.useBrowserVoice}
+        />
+      </p>
 
       {/* Content is sanitized in openEpub before it reaches this point. */}
       <div

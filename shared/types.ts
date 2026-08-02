@@ -177,6 +177,53 @@ function asPrice(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+/**
+ * Characters per token, for turning a chapter's length into a cost.
+ *
+ * A guess, and the weakest link in any estimate built on it: OpenRouter bills
+ * tokens and publishes no ratio for speech. Spanish tokenises worse than
+ * English because of accented characters, hence the two values. Neither has
+ * been checked against a real invoice, so anything derived from them is shown
+ * as approximate and never as a charge.
+ */
+export const CHARS_PER_TOKEN: Record<ReadingLang, number> = { es: 3.5, en: 4 }
+
+export function estimateTokens(chars: number, lang: ReadingLang): number {
+  return chars / CHARS_PER_TOKEN[lang]
+}
+
+export interface UsdEstimate {
+  usd: number
+  /**
+   * True when the model also bills output. Audio duration does not follow from
+   * text length, so the figure is a floor rather than a total.
+   */
+  isFloor: boolean
+}
+
+/**
+ * Estimated dollars for a number of characters, or null when the price is
+ * unknown — the same refusal as `describePricing`, for the same reason.
+ */
+export function estimateUsd(
+  chars: number,
+  lang: ReadingLang,
+  pricing: TtsPricing | null,
+): UsdEstimate | null {
+  const input = pricing ? asPrice(pricing.input) : null
+  if (input === null) return null
+
+  return { usd: estimateTokens(chars, lang) * input, isFloor: Boolean(pricing?.output) }
+}
+
+/** Money at the scale a chapter costs: cents matter, four decimals do not. */
+export function formatUsd(usd: number): string {
+  if (usd === 0) return '$0'
+  if (usd < 0.01) return '<$0.01'
+  if (usd < 10) return `$${usd.toFixed(2)}`
+  return `$${usd.toFixed(1)}`
+}
+
 export interface TtsRequest {
   text: string
   /**

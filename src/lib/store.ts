@@ -131,9 +131,43 @@ export const store = {
     return entry?.blob
   },
 
-  async saveAudio(hash: string, bookId: string, blob: Blob): Promise<void> {
+  /**
+   * Returns whether the audio actually landed. A full quota rejects the write,
+   * and callers that report "saved for offline" need to know that happened —
+   * `safe` would otherwise turn a dropped write into a silent success.
+   */
+  async saveAudio(hash: string, bookId: string, blob: Blob): Promise<boolean> {
     const entry: AudioEntry = { hash, bookId, blob, createdAt: Date.now() }
-    await safe(() => run(STORE_AUDIO, 'readwrite', (s) => s.put(entry)), undefined)
+    return safe(async () => {
+      await run(STORE_AUDIO, 'readwrite', (s) => s.put(entry))
+      return true
+    }, false)
+  },
+
+  /**
+   * Hashes of every cached chunk of a book, in one transaction.
+   *
+   * Asking `getAudio` per chunk would pull each blob into memory just to learn
+   * that it exists — megabytes to answer a yes/no. The primary key of the audio
+   * store is the hash, so the bookId index yields them directly.
+   */
+  async cachedHashes(bookId: string): Promise<Set<string>> {
+    const keys = await safe(
+      () =>
+        openDb().then(
+          (db) =>
+            new Promise<IDBValidKey[]>((resolve, reject) => {
+              const tx = db.transaction(STORE_AUDIO, 'readonly')
+              const request = tx.objectStore(STORE_AUDIO).index('bookId').getAllKeys(bookId)
+              request.onsuccess = () => resolve(request.result)
+              request.onerror = () => reject(request.error ?? new Error('index read failed'))
+            }),
+        ),
+      [] as IDBValidKey[],
+    )
+    // An unreadable cache reads as "nothing cached", which over-estimates cost
+    // and re-downloads — the safe direction for both callers.
+    return new Set(keys.filter((key): key is string => typeof key === 'string'))
   },
 
   async clearAudioForBook(bookId: string): Promise<void> {
